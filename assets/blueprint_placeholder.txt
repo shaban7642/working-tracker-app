@@ -1,0 +1,7 @@
+IMPORTANT:
+Please add your blueprint.gif file to this assets folder.
+
+The file should be named exactly "blueprint.gif" and placed in this directory:
+c:\Development\FlutterApps\floating_widget_app\assets\
+
+Once you add the blueprint.gif file, the app will display it instead of the building icon.
