@@ -41,14 +41,27 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
-  // Login
-  Future<bool> login(String email, String password) async {
+  // Send OTP to email
+  Future<bool> sendOTP(String email) async {
     try {
-      final user = await _authService.login(email, password);
+      return await _authService.sendOTP(email);
+    } catch (e, stackTrace) {
+      _logger.error('Send OTP failed in provider', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // Verify OTP and login
+  Future<bool> verifyOTP(String email, String otp) async {
+    try {
+      final user = await _authService.verifyOTPAndLogin(email, otp);
       state = user;
+      if (user != null) {
+        _logger.info('User logged in via OTP: ${user.email}');
+      }
       return user != null;
     } catch (e, stackTrace) {
-      _logger.error('Login failed in provider', e, stackTrace);
+      _logger.error('OTP verification failed in provider', e, stackTrace);
       rethrow;
     }
   }

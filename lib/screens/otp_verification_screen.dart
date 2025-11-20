@@ -1,0 +1,438 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
+import '../core/extensions/context_extensions.dart';
+import '../providers/auth_provider.dart';
+import '../services/otp_service.dart';
+import '../services/email_service.dart';
+import '../screens/dashboard_screen.dart';
+
+class OTPVerificationScreen extends ConsumerStatefulWidget {
+  final String email;
+
+  const OTPVerificationScreen({
+    super.key,
+    required this.email,
+  });
+
+  @override
+  ConsumerState<OTPVerificationScreen> createState() => _OTPVerificationScreenState();
+}
+
+class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
+  final _otpController = TextEditingController();
+  final _otpService = OTPService();
+  bool _isVerifying = false;
+  bool _isResending = false;
+  int _resendCooldown = 0;
+  int _expirationTime = 0;
+  Timer? _cooldownTimer;
+  Timer? _expirationTimer;
+  String _currentOTP = '';
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCooldownTimer();
+    _startExpirationTimer();
+  }
+
+  @override
+  void dispose() {
+    _otpController.dispose();
+    _cooldownTimer?.cancel();
+    _expirationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCooldownTimer() {
+    _resendCooldown = _otpService.getRemainingCooldown(widget.email);
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        _resendCooldown = _otpService.getRemainingCooldown(widget.email);
+      });
+      if (_resendCooldown == 0) {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _startExpirationTimer() {
+    _expirationTime = _otpService.getRemainingExpirationTime(widget.email);
+    _expirationTimer?.cancel();
+    _expirationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        _expirationTime = _otpService.getRemainingExpirationTime(widget.email);
+      });
+      if (_expirationTime == 0) {
+        timer.cancel();
+      }
+    });
+  }
+
+  String _maskEmail(String email) {
+    final parts = email.split('@');
+    if (parts.length != 2) return email;
+
+    final username = parts[0];
+    final domain = parts[1];
+
+    if (username.length <= 2) {
+      return '${username[0]}***@$domain';
+    }
+
+    final maskedUsername = '${username[0]}${'*' * (username.length - 2)}${username[username.length - 1]}';
+    return '$maskedUsername@$domain';
+  }
+
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(1, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _handleVerifyOTP() async {
+    if (_currentOTP.length != 6) {
+      return;
+    }
+
+    setState(() {
+      _isVerifying = true;
+      _errorText = null;
+    });
+
+    try {
+      // Verify OTP via auth provider
+      final success = await ref.read(currentUserProvider.notifier).verifyOTP(
+            widget.email,
+            _currentOTP,
+          );
+
+      if (!mounted) return;
+
+      if (success) {
+        // Navigate to dashboard
+        context.pushReplacement(const DashboardScreen());
+      } else {
+        setState(() {
+          _errorText = 'Invalid code. Please try again.';
+          _otpController.clear();
+          _currentOTP = '';
+        });
+      }
+    } on OTPException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = e.message;
+        _otpController.clear();
+        _currentOTP = '';
+      });
+
+      // Restart expiration timer if OTP was cleared
+      if (e.message.contains('expired') || e.message.contains('Too many')) {
+        _startExpirationTimer();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorText = 'Verification failed. Please try again.';
+        _otpController.clear();
+        _currentOTP = '';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isVerifying = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleResendOTP() async {
+    if (!_otpService.canResendOTP(widget.email)) {
+      return;
+    }
+
+    setState(() {
+      _isResending = true;
+      _errorText = null;
+    });
+
+    try {
+      // Resend OTP via auth provider
+      final success = await ref.read(currentUserProvider.notifier).sendOTP(widget.email);
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('New code sent to your email'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Restart timers
+        _startCooldownTimer();
+        _startExpirationTimer();
+
+        // Clear current input
+        _otpController.clear();
+        setState(() {
+          _currentOTP = '';
+        });
+      }
+    } on OTPException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to resend code: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResending = false;
+        });
+      }
+    }
+  }
+
+  void _handleEditEmail() {
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canResend = _resendCooldown == 0 && !_isResending;
+
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _handleEditEmail,
+        ),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Icon
+                    Icon(
+                      Icons.mark_email_read_outlined,
+                      size: 64,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Title
+                    Text(
+                      'Enter Code',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Masked Email
+                    Text(
+                      'Sent to ${_maskEmail(widget.email)}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Edit Email Button
+                    TextButton(
+                      onPressed: _handleEditEmail,
+                      child: const Text('Edit Email'),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Expiration Timer
+                    if (_expirationTime > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange[200]!),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 16,
+                              color: Colors.orange[700],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Expires in ${_formatTime(_expirationTime)}',
+                              style: TextStyle(
+                                color: Colors.orange[700],
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_expirationTime > 0) const SizedBox(height: 24),
+
+                    // PIN Code Fields
+                    PinCodeTextField(
+                      appContext: context,
+                      length: 6,
+                      controller: _otpController,
+                      keyboardType: TextInputType.number,
+                      animationType: AnimationType.fade,
+                      enabled: !_isVerifying,
+                      pinTheme: PinTheme(
+                        shape: PinCodeFieldShape.box,
+                        borderRadius: BorderRadius.circular(8),
+                        fieldHeight: 50,
+                        fieldWidth: 45,
+                        activeFillColor: Colors.white,
+                        inactiveFillColor: Colors.white,
+                        selectedFillColor: Colors.white,
+                        activeColor: Theme.of(context).primaryColor,
+                        inactiveColor: Colors.grey[300]!,
+                        selectedColor: Theme.of(context).primaryColor,
+                        errorBorderColor: Colors.red,
+                      ),
+                      cursorColor: Theme.of(context).primaryColor,
+                      animationDuration: const Duration(milliseconds: 200),
+                      enableActiveFill: true,
+                      autoFocus: true,
+                      onCompleted: (code) {
+                        _currentOTP = code;
+                        _handleVerifyOTP();
+                      },
+                      onChanged: (value) {
+                        setState(() {
+                          _currentOTP = value;
+                          _errorText = null;
+                        });
+                      },
+                    ),
+
+                    // Error Text
+                    if (_errorText != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorText!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 13,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+
+                    // Verify Button
+                    ElevatedButton(
+                      onPressed: (_isVerifying || _currentOTP.length != 6)
+                          ? null
+                          : _handleVerifyOTP,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isVerifying
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'Verify Code',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Resend Button
+                    TextButton.icon(
+                      onPressed: canResend ? _handleResendOTP : null,
+                      icon: _isResending
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(
+                        canResend
+                            ? 'Resend Code'
+                            : 'Resend in ${_resendCooldown}s',
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Info Text
+                    Text(
+                      'Didn\'t receive the code? Check your spam folder',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

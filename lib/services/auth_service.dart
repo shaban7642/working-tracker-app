@@ -1,6 +1,9 @@
+import 'dart:math';
 import '../models/user.dart';
 import 'storage_service.dart';
 import 'logger_service.dart';
+import 'otp_service.dart';
+import 'email_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -8,33 +11,56 @@ class AuthService {
 
   final _storage = StorageService();
   final _logger = LoggerService();
+  final _otpService = OTPService();
+  final _emailService = EmailService();
 
   AuthService._internal();
 
-  // Mock login (will be replaced with API call)
-  Future<User?> login(String email, String password) async {
+  /// Sends OTP code to the user's email
+  /// Returns true if email was sent successfully
+  Future<bool> sendOTP(String email) async {
     try {
-      _logger.info('Attempting login for: $email');
+      _logger.info('Sending OTP to: $email');
 
-      // TODO: Replace with actual API call
-      // Simulate API delay
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Mock validation
-      if (email.isEmpty || password.isEmpty) {
-        throw Exception('Email and password are required');
+      // Validate email format
+      if (email.isEmpty || !_isValidEmail(email)) {
+        throw Exception('Please enter a valid email address');
       }
 
-      if (password.length < 6) {
-        throw Exception('Password must be at least 6 characters');
+      // Generate OTP code
+      final otpCode = _otpService.generateOTP(email);
+
+      // Send email with OTP
+      await _emailService.sendOTPEmail(email, otpCode);
+
+      _logger.info('OTP sent successfully to: $email');
+      return true;
+    } catch (e, stackTrace) {
+      _logger.error('Failed to send OTP', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Verifies OTP and logs in the user
+  /// Returns User object on success, null on failure
+  Future<User?> verifyOTPAndLogin(String email, String otp) async {
+    try {
+      _logger.info('Verifying OTP for: $email');
+
+      // Verify OTP
+      final isValid = _otpService.verifyOTP(email, otp);
+
+      if (!isValid) {
+        _logger.info('Invalid OTP for: $email');
+        return null;
       }
 
-      // Create mock user
+      // Create user with secure token
       final user = User(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         email: email,
         name: email.split('@')[0],
-        token: 'mock_token_${DateTime.now().millisecondsSinceEpoch}',
+        token: _generateSecureToken(),
         createdAt: DateTime.now(),
         lastLoginAt: DateTime.now(),
       );
@@ -45,9 +71,22 @@ class AuthService {
       _logger.info('Login successful for: $email');
       return user;
     } catch (e, stackTrace) {
-      _logger.error('Login failed', e, stackTrace);
+      _logger.error('OTP verification failed', e, stackTrace);
       rethrow;
     }
+  }
+
+  /// Validates email format
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    return emailRegex.hasMatch(email);
+  }
+
+  /// Generates a secure random token
+  String _generateSecureToken() {
+    final random = Random.secure();
+    final values = List<int>.generate(32, (i) => random.nextInt(256));
+    return values.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 
   // Logout
@@ -77,68 +116,4 @@ class AuthService {
     return getCurrentUser() != null;
   }
 
-  // Validate token (for future API integration)
-  Future<bool> validateToken(String token) async {
-    try {
-      // TODO: Replace with actual API call to validate token
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Mock validation
-      return token.startsWith('mock_token_');
-    } catch (e, stackTrace) {
-      _logger.error('Token validation failed', e, stackTrace);
-      return false;
-    }
-  }
-
-  // Refresh token (for future API integration)
-  Future<String?> refreshToken(String oldToken) async {
-    try {
-      // TODO: Replace with actual API call to refresh token
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Mock refresh
-      return 'mock_token_${DateTime.now().millisecondsSinceEpoch}';
-    } catch (e, stackTrace) {
-      _logger.error('Token refresh failed', e, stackTrace);
-      return null;
-    }
-  }
-
-  // Register (for future implementation)
-  Future<User?> register({
-    required String email,
-    required String password,
-    required String name,
-  }) async {
-    try {
-      _logger.info('Attempting registration for: $email');
-
-      // TODO: Replace with actual API call
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Mock validation
-      if (email.isEmpty || password.isEmpty || name.isEmpty) {
-        throw Exception('All fields are required');
-      }
-
-      // Create user
-      final user = User(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email,
-        name: name,
-        token: 'mock_token_${DateTime.now().millisecondsSinceEpoch}',
-        createdAt: DateTime.now(),
-        lastLoginAt: DateTime.now(),
-      );
-
-      await _storage.saveUser(user);
-
-      _logger.info('Registration successful for: $email');
-      return user;
-    } catch (e, stackTrace) {
-      _logger.error('Registration failed', e, stackTrace);
-      rethrow;
-    }
-  }
 }

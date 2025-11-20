@@ -9,7 +9,7 @@ import '../providers/project_provider.dart';
 import '../providers/timer_provider.dart';
 import '../providers/window_provider.dart';
 import '../providers/navigation_provider.dart';
-import 'login_screen.dart';
+import 'email_entry_screen.dart';
 import 'report_screen.dart';
 import 'submission_form_screen.dart';
 
@@ -86,7 +86,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     if (confirmed == true) {
       await ref.read(currentUserProvider.notifier).logout();
       if (mounted) {
-        context.pushReplacement(const LoginScreen());
+        context.pushReplacement(const EmailEntryScreen());
       }
     }
   }

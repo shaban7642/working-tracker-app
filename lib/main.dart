@@ -1,15 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'services/storage_service.dart';
 import 'services/timer_service.dart';
 import 'services/logger_service.dart';
+import 'services/email_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/window_provider.dart';
-import 'screens/login_screen.dart';
+import 'screens/email_entry_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'widgets/floating_widget.dart';
 
@@ -20,6 +22,10 @@ void main() async {
 
   try {
     logger.info('Starting Work Tracker application...');
+
+    // Load environment variables
+    await dotenv.load(fileName: '.env');
+    logger.info('Environment variables loaded');
 
     // Initialize window manager for desktop
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -52,6 +58,11 @@ void main() async {
     await timerService.initialize();
     logger.info('Timer service initialized');
 
+    // Initialize email service
+    final emailService = EmailService();
+    emailService.initialize();
+    logger.info('Email service initialized');
+
     // Run app
     runApp(
       const ProviderScope(
@@ -83,7 +94,7 @@ class MyApp extends ConsumerWidget {
           : AppTheme.lightTheme,
       home: isFloatingMode
           ? const FloatingWidget()
-          : (isLoggedIn ? const DashboardScreen() : const LoginScreen()),
+          : (isLoggedIn ? const DashboardScreen() : const EmailEntryScreen()),
     );
   }
 }
