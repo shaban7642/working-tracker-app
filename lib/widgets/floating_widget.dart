@@ -37,9 +37,6 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
   /// Whether the project dropdown list is expanded
   bool _isExpanded = false;
 
-  /// Flag to prevent rapid hover state changes during window resize
-  bool _isResizing = false;
-
   /// Timer for checking if window needs to snap back to right edge
   Timer? _snapBackTimer;
 
@@ -48,6 +45,10 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
 
   /// Text controller for search field
   final TextEditingController _searchController = TextEditingController();
+
+  /// Current horizontal slide offset for the widget animation
+  /// Starts slid out (80% off-screen)
+  double _currentSlideOffset = FloatingWidgetConstants.slideOutOffset;
 
   // ============================================================================
   // LIFECYCLE METHODS
@@ -75,15 +76,13 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
 
   /// Checks if window has been moved and snaps it back to right edge
   Future<void> _checkAndSnapToRightEdge() async {
-    if (_isResizing) return; // Don't snap during resize operations
-
     // IMPORTANT: Only snap in floating mode (small window 60-280px wide)
     // Don't snap the 800x600 dashboard window!
     try {
       final size = await windowManager.getSize();
 
-      // If window is wider than 300px, it's the dashboard - don't snap!
-      if (size.width > 300) {
+      // If window is not our fixed width, it's the dashboard - don't snap!
+      if (size.width != FloatingWidgetConstants.fixedWidgetWidth) {
         print('FloatingWidget: Skipping snap - window is ${size.width}px (dashboard mode)');
         return;
       }
@@ -127,7 +126,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
         for (int i = 0; i < 3; i++) {
           await windowManager.setSize(
             Size(
-              currentSize.width,
+              FloatingWidgetConstants.fixedWidgetWidth,
               FloatingWidgetConstants.baseHeight,
             ),
           );
@@ -183,13 +182,10 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
               )
           : FloatingWidgetConstants.baseHeight;
 
-      // Calculate width: depends on hover state or expanded state
-      final width = (_isHovered || expanded)
-          ? FloatingWidgetConstants.expandedWidth
-          : FloatingWidgetConstants.collapsedWidth;
-
-      // Apply the new window size
-      await windowManager.setSize(Size(width, height));
+      // Width is always fixed
+      await windowManager.setSize(
+        Size(FloatingWidgetConstants.fixedWidgetWidth, height),
+      );
     } catch (e) {
       // Silently ignore resize errors to prevent crashes
       // The window manager will handle size constraints
@@ -201,83 +197,25 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
   // ============================================================================
 
   /// Called when mouse enters the widget area
-  Future<void> _onMouseEnter() async {
-    // Ignore if already hovered or currently resizing
-    if (_isHovered || _isResizing) return;
+  void _onMouseEnter() {
+    // Ignore if already hovered
+    if (_isHovered) return;
 
-    _isResizing = true;
-    print('FloatingWidget: Mouse enter - Starting expand animation');
-
-    // Get current window position BEFORE resize
-    final currentPosition = await windowManager.getPosition();
-
-    // Calculate new X position to keep right edge anchored
-    // When expanding from 60px to 280px, move window LEFT by 220px
-    final widthDiff = FloatingWidgetConstants.expandedWidth - FloatingWidgetConstants.collapsedWidth;
-    final newX = currentPosition.dx - widthDiff;
-
-    // Resize window AND reposition simultaneously to keep right edge fixed
-    await Future.wait([
-      windowManager.setSize(
-        const Size(
-          FloatingWidgetConstants.expandedWidth,
-          FloatingWidgetConstants.baseHeight,
-        ),
-      ),
-      windowManager.setPosition(Offset(newX, currentPosition.dy)),
-    ]);
-
-    // Small delay to ensure window operations complete
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // THEN trigger UI animation
-    if (mounted) {
-      setState(() {
-        _isHovered = true;
-      });
-      print('FloatingWidget: UI state updated to expanded');
-    }
-
-    _isResizing = false;
+    setState(() {
+      _isHovered = true;
+      _currentSlideOffset = FloatingWidgetConstants.slideInOffset;
+    });
   }
 
   /// Called when mouse exits the widget area
-  Future<void> _onMouseExit() async {
-    // Ignore if already collapsed, dropdown is expanded, or currently resizing
-    if (!_isHovered || _isExpanded || _isResizing) return;
+  void _onMouseExit() {
+    // Ignore if not hovered or dropdown is expanded
+    if (!_isHovered || _isExpanded) return;
 
-    _isResizing = true;
-
-    // Trigger UI collapse animation FIRST
-    if (mounted) {
-      setState(() {
-        _isHovered = false;
-      });
-    }
-
-    // Wait for animation to complete
-    await Future.delayed(FloatingWidgetConstants.animationDuration);
-
-    // Get current window position BEFORE resize
-    final currentPosition = await windowManager.getPosition();
-
-    // Calculate new X position to keep right edge anchored
-    // When collapsing from 280px to 60px, move window RIGHT by 220px
-    final widthDiff = FloatingWidgetConstants.expandedWidth - FloatingWidgetConstants.collapsedWidth;
-    final newX = currentPosition.dx + widthDiff;
-
-    // Resize window AND reposition simultaneously to keep right edge fixed
-    await Future.wait([
-      windowManager.setSize(
-        const Size(
-          FloatingWidgetConstants.collapsedWidth,
-          FloatingWidgetConstants.baseHeight,
-        ),
-      ),
-      windowManager.setPosition(Offset(newX, currentPosition.dy)),
-    ]);
-
-    _isResizing = false;
+    setState(() {
+      _isHovered = false;
+      _currentSlideOffset = FloatingWidgetConstants.slideOutOffset;
+    });
   }
 
   /// Toggles the dropdown expansion state
@@ -321,27 +259,6 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
   // ============================================================================
   // UI HELPERS
   // ============================================================================
-
-  /// Returns the appropriate icon size based on widget state
-  double get _iconSize {
-    return (_isHovered || _isExpanded)
-        ? FloatingWidgetConstants.expandedIconSize
-        : FloatingWidgetConstants.collapsedIconSize;
-  }
-
-  /// Returns the appropriate horizontal padding based on widget state
-  double get _horizontalPadding {
-    return (_isHovered || _isExpanded)
-        ? FloatingWidgetConstants.expandedHorizontalPadding
-        : FloatingWidgetConstants.collapsedHorizontalPadding;
-  }
-
-  /// Returns the current widget width based on state
-  double get _currentWidth {
-    return (_isHovered || _isExpanded)
-        ? FloatingWidgetConstants.expandedWidth
-        : FloatingWidgetConstants.collapsedWidth;
-  }
 
   /// Calculates the dropdown height based on project count
   /// Includes extra space for search field
@@ -399,7 +316,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
     );
   }
 
-  /// Builds the main animated container that changes size
+  /// Builds the main animated container that slides horizontally
   Widget _buildAnimatedContainer(
     List<dynamic> projects,
     dynamic currentProject,
@@ -408,15 +325,22 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
     return MouseRegion(
       onEnter: (_) => _onMouseEnter(),
       onExit: (_) => _onMouseExit(),
-      child: Align(
-        alignment: Alignment.centerRight, // Anchor to right edge
-        child: AnimatedContainer(
-          duration: FloatingWidgetConstants.animationDuration,
-          curve: Curves.easeOutCubic,
-          width: _currentWidth,
-          height: _getWidgetHeight(projects.length),
-          child: _buildMainContainer(projects, currentProject, currentTimer),
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedPositioned(
+            duration: FloatingWidgetConstants.animationDuration,
+            curve: Curves.easeInOutQuart,
+            right: -_currentSlideOffset, // Negative to slide left when hovering
+            top: 0,
+            bottom: 0,
+            width: FloatingWidgetConstants.fixedWidgetWidth,
+            child: SizedBox(
+              height: _getWidgetHeight(projects.length),
+              child: _buildMainContainer(projects, currentProject, currentTimer),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -507,56 +431,28 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
       ),
       child: Container(
         padding: EdgeInsets.symmetric(
-          horizontal: _horizontalPadding,
+          horizontal: FloatingWidgetConstants.expandedHorizontalPadding,
           vertical: FloatingWidgetConstants.verticalPadding,
         ),
         child: Row(
-          mainAxisAlignment: (_isHovered || _isExpanded)
-              ? MainAxisAlignment.start // Left-aligned when expanded
-              : MainAxisAlignment.center, // Centered when collapsed
+          mainAxisAlignment: MainAxisAlignment.start, // Always left-aligned
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Icon - centered when collapsed, left-aligned when expanded
+            // Icon - always visible
             _buildProjectIcon(),
+            SizedBox(width: FloatingWidgetConstants.iconTextSpacing),
 
-            // Content - slides in from RIGHT with fade animation
-            if (_isHovered || _isExpanded)
-              Expanded(
-                child: ClipRect(
-                  clipBehavior: Clip.hardEdge,
-                  child: AnimatedSlide(
-                    duration: FloatingWidgetConstants.animationDuration,
-                    curve: Curves.easeOutCubic, // Smoother easing curve
-                    offset: (_isHovered || _isExpanded)
-                      ? Offset.zero
-                      : const Offset(1.0, 0), // Slide from right (positive = right)
-                    child: AnimatedOpacity(
-                      duration: FloatingWidgetConstants.animationDuration,
-                      curve: Curves.easeIn,
-                      opacity: (_isHovered || _isExpanded) ? 1.0 : 0.0,
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Only show content if we have enough width
-                          // This prevents overflow during window resize transitions
-                          if (constraints.maxWidth < 180) {
-                            return const SizedBox.shrink();
-                          }
-
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(width: FloatingWidgetConstants.iconTextSpacing),
-                              _buildProjectInfo(currentProject, currentTimer),
-                              _buildDropdownArrow(projects),
-                              _buildMaximizeButton(),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
+            // Content - always visible (no animation needed since whole widget slides)
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildProjectInfo(currentProject, currentTimer),
+                  _buildDropdownArrow(projects),
+                  _buildMaximizeButton(),
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -568,7 +464,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
     return Icon(
       Icons.apartment,
       color: Colors.brown[400],
-      size: _iconSize,
+      size: FloatingWidgetConstants.expandedIconSize,
     );
   }
 
@@ -622,6 +518,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
       child: AnimatedRotation(
         turns: _isExpanded ? 0.5 : 0, // Rotate 180° when expanded
         duration: FloatingWidgetConstants.animationDuration,
+        curve: Curves.easeInOutQuart, // Smooth rotation curve
         child: Icon(
           Icons.arrow_drop_down,
           color: Colors.grey[700],
