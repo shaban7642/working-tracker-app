@@ -63,7 +63,9 @@ class EmailService {
 
       final sendReport = await send(message, _smtpServer);
 
-      _logger.i('OTP email sent successfully to $toEmail: ${sendReport.toString()}');
+      _logger.i('OTP email sent to $toEmail');
+      _logger.d('Send report: ${sendReport.toString()}');
+
       return true;
     } on MailerException catch (e) {
       _logger.e('Failed to send OTP email to $toEmail: ${e.message}');

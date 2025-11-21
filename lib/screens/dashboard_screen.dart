@@ -433,11 +433,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                     child: InkWell(
                                       onTap: () async {
                                         if (isActive) {
-                                          // Stop timer if clicking on active project
-                                          await ref.read(currentTimerProvider.notifier).stopTimer();
-                                          if (mounted) {
-                                            context.showSuccessSnackBar('Timer stopped');
-                                          }
+                                          // Do nothing if clicking on active project - keep timer running
                                         } else if (currentTimer != null) {
                                           // Switch project if timer is running
                                           await ref.read(currentTimerProvider.notifier).switchProject(project);

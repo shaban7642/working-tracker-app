@@ -235,8 +235,8 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
     int projectCount,
   ) async {
     if (isActive) {
-      // Stop timer if clicking on active project
-      await ref.read(currentTimerProvider.notifier).stopTimer();
+      // Do nothing if clicking on active project - keep timer running
+      // Just close the dropdown
     } else if (currentTimer != null) {
       // Switch to different project if timer is running
       await ref.read(currentTimerProvider.notifier).switchProject(project);
