@@ -41,9 +41,9 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
 
   @override
   void dispose() {
-    _otpController.dispose();
     _cooldownTimer?.cancel();
     _expirationTimer?.cancel();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -116,6 +116,9 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
       if (!mounted) return;
 
       if (success) {
+        // Cancel timers before navigation
+        _cooldownTimer?.cancel();
+        _expirationTimer?.cancel();
         // Navigate to dashboard
         context.pushReplacement(const DashboardScreen());
       } else {
