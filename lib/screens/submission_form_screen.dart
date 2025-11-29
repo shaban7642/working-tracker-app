@@ -5,11 +5,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/extensions/context_extensions.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
 import '../models/project.dart';
 import '../models/task_submission.dart';
 import '../providers/auth_provider.dart';
 import '../services/report_submission_service.dart';
+import '../widgets/gradient_button.dart';
 
 class SubmissionFormScreen extends ConsumerStatefulWidget {
   final List<Project> projects;
@@ -265,15 +267,15 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
         appBar: AppBar(
           title: const Text('Submit Session Report'),
         ),
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.timer_off, size: 64, color: Colors.grey),
-              SizedBox(height: 16),
+              Icon(Icons.timer_off, size: 64, color: AppTheme.textSecondary),
+              const SizedBox(height: 16),
               Text(
                 'No project time to submit',
-                style: TextStyle(fontSize: 18, color: Colors.grey),
+                style: TextStyle(fontSize: 18, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -312,9 +314,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                         const SizedBox(height: 4),
                         Text(
                           '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} - Total: ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime))}',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[700],
+                            color: AppTheme.textSecondary,
                           ),
                         ),
                       ],
@@ -339,10 +341,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.surfaceColor,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
+                    color: AppTheme.textPrimary.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, -2),
                   ),
@@ -351,27 +353,11 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               child: SafeArea(
                 child: SizedBox(
                   width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
+                  child: GradientButtonWithIcon(
                     onPressed: _isSubmitting ? null : _submitReport,
-                    icon: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.send),
-                    label: Text(
-                      _isSubmitting ? 'Submitting...' : 'Submit Report',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colorScheme.primary,
-                      foregroundColor: Colors.white,
-                    ),
+                    icon: Icons.send,
+                    label: _isSubmitting ? 'Submitting...' : 'Submit Report',
+                    isLoading: _isSubmitting,
                   ),
                 ),
               ),
@@ -416,9 +402,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'Time: ${DateTimeUtils.formatDuration(project.totalTime)}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          color: AppTheme.textSecondary,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -456,9 +442,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: AppTheme.backgroundColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[300]!),
+        border: Border.all(color: AppTheme.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,7 +464,7 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                 IconButton(
                   onPressed: () => _removeTask(projectId, taskIndex),
                   icon: const Icon(Icons.delete_outline, size: 20),
-                  color: Colors.red[400],
+                  color: AppTheme.errorColor,
                   tooltip: 'Remove Task',
                 ),
             ],
@@ -494,7 +480,7 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.task_alt),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: AppTheme.surfaceColor,
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -515,7 +501,7 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               border: OutlineInputBorder(),
               prefixIcon: Icon(Icons.description),
               filled: true,
-              fillColor: Colors.white,
+              fillColor: AppTheme.surfaceColor,
             ),
             maxLines: 3,
           ),
@@ -556,10 +542,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: taskData.isDragging ? Colors.blue[50] : Colors.transparent,
+          color: taskData.isDragging ? AppTheme.primaryColor.withValues(alpha: 0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: taskData.isDragging ? Colors.blue[400]! : Colors.transparent,
+            color: taskData.isDragging ? AppTheme.primaryColor : Colors.transparent,
             width: 2,
           ),
         ),
@@ -598,10 +584,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 decoration: BoxDecoration(
-                  color: taskData.isDragging ? Colors.blue[100] : Colors.grey[100],
+                  color: taskData.isDragging ? AppTheme.primaryColor.withValues(alpha: 0.2) : AppTheme.backgroundColor,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: taskData.isDragging ? Colors.blue[400]! : Colors.grey[300]!,
+                    color: taskData.isDragging ? AppTheme.primaryColor : AppTheme.borderColor,
                     style: BorderStyle.solid,
                   ),
                 ),
@@ -610,14 +596,14 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                     Icon(
                       taskData.isDragging ? Icons.file_download : Icons.cloud_upload_outlined,
                       size: 32,
-                      color: taskData.isDragging ? Colors.blue[600] : Colors.grey[500],
+                      color: taskData.isDragging ? AppTheme.primaryColor : AppTheme.textSecondary,
                     ),
                     const SizedBox(height: 8),
                     Text(
                       taskData.isDragging ? 'Drop files here' : 'Drag & drop files here',
                       style: TextStyle(
                         fontSize: 13,
-                        color: taskData.isDragging ? Colors.blue[700] : Colors.grey[600],
+                        color: taskData.isDragging ? AppTheme.primaryColor : AppTheme.textSecondary,
                         fontWeight: taskData.isDragging ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
@@ -651,8 +637,8 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                             height: 100,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.grey[300]!),
-                              color: Colors.grey[100],
+                              border: Border.all(color: AppTheme.borderColor),
+                              color: AppTheme.backgroundColor,
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(7),
@@ -679,20 +665,20 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                                 width: 24,
                                 height: 24,
                                 decoration: BoxDecoration(
-                                  color: Colors.red[400],
+                                  color: AppTheme.errorColor,
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.2),
+                                      color: AppTheme.textPrimary.withValues(alpha: 0.2),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
                                   ],
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.close,
                                   size: 14,
-                                  color: Colors.white,
+                                  color: AppTheme.surfaceColor,
                                 ),
                               ),
                             ),
@@ -730,27 +716,27 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
     switch (extension) {
       case 'pdf':
         iconData = Icons.picture_as_pdf;
-        iconColor = Colors.red;
+        iconColor = AppTheme.errorColor;
         break;
       case 'doc':
       case 'docx':
         iconData = Icons.description;
-        iconColor = Colors.blue;
+        iconColor = AppTheme.primaryColor;
         break;
       case 'xls':
       case 'xlsx':
         iconData = Icons.table_chart;
-        iconColor = Colors.green;
+        iconColor = AppTheme.successColor;
         break;
       case 'zip':
       case 'rar':
       case '7z':
         iconData = Icons.folder_zip;
-        iconColor = Colors.orange;
+        iconColor = AppTheme.warningColor;
         break;
       default:
         iconData = Icons.insert_drive_file;
-        iconColor = Colors.grey;
+        iconColor = AppTheme.textSecondary;
     }
 
     return Column(

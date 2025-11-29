@@ -2,24 +2,35 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   // Colors
-  static const Color primaryColor = Color(0xFF2196F3);
-  static const Color secondaryColor = Color(0xFF03A9F4);
+  static const Color primaryColor = Color(0xFFa76d2a);
+  static const Color secondaryColor = Color(0xFFac8456);
   static const Color errorColor = Color(0xFFE53935);
   static const Color successColor = Color(0xFF4CAF50);
   static const Color warningColor = Color(0xFFFFC107);
 
+  // Gradient Colors
+  static const Color gradientStart = Color(0xFFa76d2a);
+  static const Color gradientEnd = Color(0xFFc99958);
+
   // Text Colors
-  static const Color textPrimary = Color(0xFF212121);
-  static const Color textSecondary = Color(0xFF757575);
+  static const Color textPrimary = Color(0xFF000000);
+  static const Color textSecondary = Color(0xFF666666);
   static const Color textHint = Color(0xFF9E9E9E);
 
   // Background Colors
   static const Color backgroundColor = Color(0xFFF5F5F5);
-  static const Color surfaceColor = Colors.white;
-  static const Color cardColor = Colors.white;
+  static const Color surfaceColor = Color(0xFFFFFFFF);
+  static const Color cardColor = Color(0xFFFFFFFF);
 
   // Border Colors
   static const Color borderColor = Color(0xFFE0E0E0);
+
+  // Gradient
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [gradientStart, gradientEnd],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   // Light Theme
   static ThemeData lightTheme = ThemeData(

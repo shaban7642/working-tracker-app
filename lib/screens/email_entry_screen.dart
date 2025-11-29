@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/validators.dart';
 import '../providers/auth_provider.dart';
 import '../services/otp_service.dart';
 import '../services/email_service.dart';
+import '../widgets/gradient_button.dart';
 import 'otp_verification_screen.dart';
 
 class EmailEntryScreen extends ConsumerStatefulWidget {
@@ -47,7 +49,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('OTP sent to your email. Check your inbox.'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.successColor,
             duration: Duration(seconds: 3),
           ),
         );
@@ -64,7 +66,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppTheme.warningColor,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -73,7 +75,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.errorColor,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -82,7 +84,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to send OTP: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.errorColor,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -98,7 +100,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: AppTheme.backgroundColor,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -131,7 +133,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
                       Text(
                         'Enter your email to receive a login code',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey[600],
+                              color: AppTheme.textSecondary,
                             ),
                         textAlign: TextAlign.center,
                       ),
@@ -151,7 +153,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           filled: true,
-                          fillColor: Colors.white,
+                          fillColor: AppTheme.surfaceColor,
                         ),
                         validator: Validators.validateEmail,
                         onFieldSubmitted: (_) {
@@ -163,21 +165,15 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
                       const SizedBox(height: 24),
 
                       // Send OTP Button
-                      ElevatedButton(
+                      GradientButton(
                         onPressed: _isLoading ? null : _handleSendOTP,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
                         child: _isLoading
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  color: Colors.white,
                                 ),
                               )
                             : const Text(
@@ -194,7 +190,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
                       Text(
                         'A 6-digit code will be sent to your email',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
+                              color: AppTheme.textSecondary,
                             ),
                         textAlign: TextAlign.center,
                       ),

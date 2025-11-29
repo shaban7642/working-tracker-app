@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
 import '../providers/project_provider.dart';
 import '../providers/timer_provider.dart';
@@ -371,14 +372,14 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
     return ClipRect(
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppTheme.surfaceColor,
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(FloatingWidgetConstants.borderRadius),
             bottomLeft: Radius.circular(FloatingWidgetConstants.borderRadius),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(
+              color: AppTheme.textPrimary.withValues(
                 alpha: FloatingWidgetConstants.shadowOpacity,
               ),
               spreadRadius: 0,
@@ -390,7 +391,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
             ),
           ],
           border: Border.all(
-            color: Colors.grey.withValues(
+            color: AppTheme.borderColor.withValues(
               alpha: FloatingWidgetConstants.borderColorOpacity,
             ),
             width: FloatingWidgetConstants.borderWidth,
@@ -479,9 +480,9 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
 
   /// Builds the project icon
   Widget _buildProjectIcon() {
-    return Icon(
+    return const Icon(
       Icons.apartment,
-      color: Colors.brown[400],
+      color: AppTheme.primaryColor,
       size: FloatingWidgetConstants.expandedIconSize,
     );
   }
@@ -504,8 +505,8 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
                   currentProject?.name ?? 'Select Project',
                   style: TextStyle(
                     color: currentProject == null
-                        ? Colors.grey[600]
-                        : Colors.black87,
+                        ? AppTheme.textSecondary
+                        : AppTheme.textPrimary,
                     fontSize: FloatingWidgetConstants.projectNameFontSize,
                     fontWeight: FontWeight.w500,
                   ),
@@ -517,8 +518,8 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
                 // Timer display - Shows session total time (sum of all projects)
                 Text(
                   DateTimeUtils.formatDuration(sessionTotalTime),
-                  style: TextStyle(
-                    color: Colors.grey[700],
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
                     fontSize: FloatingWidgetConstants.timerFontSize,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'monospace',
@@ -553,13 +554,13 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Colors.green[50],
+          color: AppTheme.successColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Icon(
+        child: const Icon(
           Icons.send,
           size: 16,
-          color: Colors.green[700],
+          color: AppTheme.successColor,
         ),
       ),
     );
@@ -573,9 +574,9 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
         turns: _isExpanded ? 0.5 : 0, // Rotate 180° when expanded
         duration: FloatingWidgetConstants.animationDuration,
         curve: Curves.easeInOutQuart, // Smooth rotation curve
-        child: Icon(
+        child: const Icon(
           Icons.swap_horiz, // Changed from arrow_drop_down to swap_horiz (switch icon)
-          color: Colors.grey[700],
+          color: AppTheme.textSecondary,
           size: 20,
         ),
       ),
@@ -590,10 +591,10 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
         padding: const EdgeInsets.all(
           FloatingWidgetConstants.maximizeButtonPadding,
         ),
-        child: Icon(
+        child: const Icon(
           Icons.open_in_full,
           size: FloatingWidgetConstants.maximizeIconSize,
-          color: Colors.grey[600],
+          color: AppTheme.textSecondary,
         ),
       ),
     );
@@ -608,7 +609,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: Colors.grey.withValues(
+            color: AppTheme.borderColor.withValues(
               alpha: FloatingWidgetConstants.dropdownBorderOpacity,
             ),
             width: FloatingWidgetConstants.dropdownBorderWidth,
@@ -654,20 +655,20 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
         },
         decoration: InputDecoration(
           hintText: 'Search projects...',
-          hintStyle: TextStyle(
-            color: Colors.grey[400],
+          hintStyle: const TextStyle(
+            color: AppTheme.textHint,
             fontSize: 13,
           ),
-          prefixIcon: Icon(
+          prefixIcon: const Icon(
             Icons.search,
-            color: Colors.grey[600],
+            color: AppTheme.textSecondary,
             size: 20,
           ),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(
+                  icon: const Icon(
                     Icons.clear,
-                    color: Colors.grey[600],
+                    color: AppTheme.textSecondary,
                     size: 18,
                   ),
                   onPressed: () {
@@ -679,7 +680,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
                 )
               : null,
           filled: true,
-          fillColor: Colors.grey[100],
+          fillColor: AppTheme.backgroundColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
@@ -692,7 +693,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
         ),
         style: const TextStyle(
           fontSize: 13,
-          color: Colors.black87,
+          color: AppTheme.textPrimary,
         ),
       ),
     );
@@ -708,14 +709,14 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
           children: [
             Icon(
               Icons.search_off,
-              color: Colors.grey[400],
+              color: AppTheme.textHint,
               size: 40,
             ),
             const SizedBox(height: 8),
             Text(
               'No projects found',
               style: TextStyle(
-                color: Colors.grey[600],
+                color: AppTheme.textSecondary,
                 fontSize: 13,
               ),
             ),
@@ -748,7 +749,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
             Icon(
               Icons.apartment,
               size: FloatingWidgetConstants.dropdownProjectIconSize,
-              color: isActive ? Colors.blue[600] : Colors.grey[600],
+              color: isActive ? AppTheme.primaryColor : AppTheme.textSecondary,
             ),
             SizedBox(width: FloatingWidgetConstants.dropdownIconSpacing),
 
@@ -757,7 +758,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
               child: Text(
                 project.name,
                 style: TextStyle(
-                  color: isActive ? Colors.blue[600] : Colors.black87,
+                  color: isActive ? AppTheme.primaryColor : AppTheme.textPrimary,
                   fontSize: FloatingWidgetConstants.dropdownProjectFontSize,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                 ),
@@ -768,8 +769,8 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
             if (project.totalTime.inSeconds > 0)
               Text(
                 DateTimeUtils.formatDuration(project.totalTime),
-                style: TextStyle(
-                  color: Colors.grey[600],
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
                   fontSize: FloatingWidgetConstants.dropdownTimeFontSize,
                   fontFamily: 'monospace',
                 ),
@@ -784,7 +785,7 @@ class _FloatingWidgetState extends ConsumerState<FloatingWidget> {
                 width: FloatingWidgetConstants.activeIndicatorSize,
                 height: FloatingWidgetConstants.activeIndicatorSize,
                 decoration: const BoxDecoration(
-                  color: Colors.green,
+                  color: AppTheme.successColor,
                   shape: BoxShape.circle,
                 ),
               ),

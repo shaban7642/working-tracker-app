@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/extensions/context_extensions.dart';
+import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
 import '../providers/timer_provider.dart';
 import '../providers/project_provider.dart';
@@ -119,27 +120,27 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: context.colorScheme.primary,
+                    gradient: AppTheme.primaryGradient,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Total Time',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: AppTheme.surfaceColor,
                         ),
                       ),
                       Text(
                         DateTimeUtils.formatDuration(totalDuration),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'monospace',
-                          color: Colors.white,
+                          color: AppTheme.surfaceColor,
                         ),
                       ),
                     ],
@@ -200,15 +201,16 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
                             child: LinearProgressIndicator(
                               value: percentage / 100,
                               minHeight: 8,
-                              backgroundColor: Colors.grey[200],
+                              backgroundColor: AppTheme.borderColor,
+                              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             '${percentage.toStringAsFixed(1)}%',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color: AppTheme.textSecondary,
                             ),
                           ),
                         ],
@@ -231,14 +233,14 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
                         Icon(
                           Icons.hourglass_empty,
                           size: 64,
-                          color: Colors.grey[400],
+                          color: AppTheme.textHint,
                         ),
                         const SizedBox(height: 16),
                         Text(
                           'No time entries for this period',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.grey[600],
+                            color: AppTheme.textSecondary,
                           ),
                         ),
                       ],
@@ -254,10 +256,10 @@ class _ReportScreenState extends ConsumerState<ReportScreen> {
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: context.colorScheme.primary,
-                            child: const Icon(
+                            backgroundColor: AppTheme.primaryColor,
+                            child: Icon(
                               Icons.access_time,
-                              color: Colors.white,
+                              color: AppTheme.surfaceColor,
                               size: 20,
                             ),
                           ),

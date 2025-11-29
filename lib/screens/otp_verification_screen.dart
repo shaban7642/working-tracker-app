@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import '../core/extensions/context_extensions.dart';
+import '../core/theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../services/otp_service.dart';
 import '../services/email_service.dart';
 import '../screens/dashboard_screen.dart';
+import '../widgets/gradient_button.dart';
 
 class OTPVerificationScreen extends ConsumerStatefulWidget {
   final String email;
@@ -176,7 +178,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('New code sent to your email'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppTheme.successColor,
             duration: Duration(seconds: 2),
           ),
         );
@@ -196,7 +198,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppTheme.warningColor,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -205,7 +207,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to resend code: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.errorColor,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -227,7 +229,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
     final canResend = _resendCooldown == 0 && !_isResending;
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -274,7 +276,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                     Text(
                       'Sent to ${_maskEmail(widget.email)}',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[600],
+                            color: AppTheme.textSecondary,
                           ),
                       textAlign: TextAlign.center,
                     ),
@@ -295,9 +297,9 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.orange[50],
+                          color: AppTheme.warningColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orange[200]!),
+                          border: Border.all(color: AppTheme.warningColor.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -305,13 +307,13 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                             Icon(
                               Icons.timer_outlined,
                               size: 16,
-                              color: Colors.orange[700],
+                              color: AppTheme.warningColor,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               'Expires in ${_formatTime(_expirationTime)}',
                               style: TextStyle(
-                                color: Colors.orange[700],
+                                color: AppTheme.warningColor,
                                 fontWeight: FontWeight.w500,
                                 fontSize: 13,
                               ),
@@ -334,15 +336,15 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                         borderRadius: BorderRadius.circular(8),
                         fieldHeight: 50,
                         fieldWidth: 45,
-                        activeFillColor: Colors.white,
-                        inactiveFillColor: Colors.white,
-                        selectedFillColor: Colors.white,
-                        activeColor: Theme.of(context).primaryColor,
-                        inactiveColor: Colors.grey[300]!,
-                        selectedColor: Theme.of(context).primaryColor,
-                        errorBorderColor: Colors.red,
+                        activeFillColor: AppTheme.surfaceColor,
+                        inactiveFillColor: AppTheme.surfaceColor,
+                        selectedFillColor: AppTheme.surfaceColor,
+                        activeColor: AppTheme.primaryColor,
+                        inactiveColor: AppTheme.borderColor,
+                        selectedColor: AppTheme.primaryColor,
+                        errorBorderColor: AppTheme.errorColor,
                       ),
-                      cursorColor: Theme.of(context).primaryColor,
+                      cursorColor: AppTheme.primaryColor,
                       animationDuration: const Duration(milliseconds: 200),
                       enableActiveFill: true,
                       autoFocus: true,
@@ -364,7 +366,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                       Text(
                         _errorText!,
                         style: const TextStyle(
-                          color: Colors.red,
+                          color: AppTheme.errorColor,
                           fontSize: 13,
                         ),
                         textAlign: TextAlign.center,
@@ -373,23 +375,17 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                     const SizedBox(height: 24),
 
                     // Verify Button
-                    ElevatedButton(
+                    GradientButton(
                       onPressed: (_isVerifying || _currentOTP.length != 6)
                           ? null
                           : _handleVerifyOTP,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
                       child: _isVerifying
                           ? const SizedBox(
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                color: Colors.white,
                               ),
                             )
                           : const Text(
@@ -425,7 +421,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                     Text(
                       'Didn\'t receive the code? Check your spam folder',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
+                            color: AppTheme.textSecondary,
                           ),
                       textAlign: TextAlign.center,
                     ),
