@@ -1,13 +1,132 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <windowsx.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+// Static pointer for method channel callback
+static FlutterWindow* g_flutter_window = nullptr;
 
-FlutterWindow::~FlutterWindow() {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project)
+    : project_(project) {
+  g_flutter_window = this;
+}
+
+FlutterWindow::~FlutterWindow() {
+  g_flutter_window = nullptr;
+}
+
+void FlutterWindow::SetClickThroughEnabled(bool enabled) {
+  click_through_enabled_ = enabled;
+  HWND hwnd = GetHandle();
+  if (!hwnd) return;
+
+  if (enabled) {
+    // Reset state tracking
+    is_transparent_ = false;
+
+    // Start polling mouse position to toggle transparency based on hover
+    if (mouse_poll_timer_ == 0) {
+      mouse_poll_timer_ = SetTimer(hwnd, 1, 30, MousePollTimerProc);
+    }
+
+    // Immediately set transparent state for initial click-through
+    // This ensures clicks pass through immediately on mode switch
+    LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+    is_transparent_ = true;
+  } else {
+    // Stop polling
+    if (mouse_poll_timer_ != 0) {
+      KillTimer(hwnd, mouse_poll_timer_);
+      mouse_poll_timer_ = 0;
+    }
+    // ALWAYS remove WS_EX_TRANSPARENT when disabling (don't rely on cached state)
+    // This prevents state desync after multiple mode switches
+    LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, (exStyle | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT);
+    is_transparent_ = false;
+  }
+}
+
+void CALLBACK FlutterWindow::MousePollTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
+  if (g_flutter_window) {
+    g_flutter_window->UpdateTransparencyForMousePosition();
+  }
+}
+
+void FlutterWindow::UpdateTransparencyForMousePosition() {
+  HWND hwnd = GetHandle();
+  if (!hwnd || !click_through_enabled_) return;
+
+  // Get mouse position in screen coordinates
+  POINT pt;
+  GetCursorPos(&pt);
+
+  // Get window rect
+  RECT windowRect;
+  GetWindowRect(hwnd, &windowRect);
+
+  // Check if mouse is within window bounds
+  bool mouseInWindow = (pt.x >= windowRect.left && pt.x < windowRect.right &&
+                        pt.y >= windowRect.top && pt.y < windowRect.bottom);
+
+  if (mouseInWindow) {
+    // Convert to client coordinates
+    POINT clientPt = pt;
+    ScreenToClient(hwnd, &clientPt);
+
+    // Get window width
+    RECT clientRect;
+    GetClientRect(hwnd, &clientRect);
+    int windowWidth = clientRect.right - clientRect.left;
+
+    // Visible width when collapsed (85px from right edge)
+    const int visibleWidth = 85;
+    int clickableLeft = windowWidth - visibleWidth;
+
+    // If mouse is in visible area, make window clickable
+    if (clientPt.x >= clickableLeft) {
+      if (is_transparent_) {
+        LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, (exStyle | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT);
+        is_transparent_ = false;
+      }
+      return;
+    }
+  }
+
+  // Mouse not in visible area - make transparent
+  if (!is_transparent_) {
+    LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+    is_transparent_ = true;
+  }
+}
+
+void FlutterWindow::SetupMethodChannel() {
+  auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(),
+      "com.worktracker/click_through",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  channel->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "setClickThroughEnabled") {
+          const auto* enabled = std::get_if<bool>(call.arguments());
+          if (enabled) {
+            SetClickThroughEnabled(*enabled);
+            result->Success();
+            return;
+          }
+          result->Error("INVALID_ARGS", "Expected boolean argument");
+        } else {
+          result->NotImplemented();
+        }
+      });
+}
 
 bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
@@ -27,6 +146,9 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Setup method channel for click-through control
+  SetupMethodChannel();
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -40,6 +162,12 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Clean up timer
+  if (mouse_poll_timer_ != 0) {
+    KillTimer(GetHandle(), mouse_poll_timer_);
+    mouse_poll_timer_ = 0;
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

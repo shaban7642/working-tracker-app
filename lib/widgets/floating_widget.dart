@@ -13,6 +13,7 @@ import '../providers/timer_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/window_provider.dart';
 import '../providers/navigation_provider.dart';
+import '../services/click_through_service.dart';
 import 'floating_widget_constants.dart';
 import 'inline_task_entry.dart';
 import 'task_chip.dart';
@@ -76,7 +77,19 @@ class _FloatingWidgetState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureCorrectWindowSize();
       _startPositionMonitoring();
+      _setupClickThrough();
     });
+  }
+
+  /// Sets up click-through for Windows (entire window is click-through when collapsed)
+  Future<void> _setupClickThrough() async {
+    if (!Platform.isWindows) return;
+
+    // Wait for window to be fully ready
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    // Enable click-through mode (now works immediately via native code)
+    await ClickThroughService.setClickThroughEnabled(true);
   }
 
   /// Starts monitoring window position to snap back to right edge
@@ -183,6 +196,7 @@ class _FloatingWidgetState
     _collapseTimer?.cancel();
     // Dispose search controller
     _searchController.dispose();
+    // Note: Don't disable click-through here - window_service handles it in switchToMainMode
     super.dispose();
   }
 
@@ -243,11 +257,11 @@ class _FloatingWidgetState
 
     setState(() {
       _isHovered = true;
-      _currentSlideOffset =
-          FloatingWidgetConstants.slideInOffset;
+      _currentSlideOffset = FloatingWidgetConstants.slideInOffset;
     });
 
-    // No window manipulation - just visual animation
+    // Disable click-through - make window clickable when hovered
+    ClickThroughService.setClickThroughEnabled(false);
   }
 
   /// Called when mouse exits the widget area
@@ -260,15 +274,15 @@ class _FloatingWidgetState
     _collapseTimer = Timer(
       const Duration(milliseconds: 150),
       () {
-        if (_isExpanded) return;
+        if (_isExpanded || !mounted) return;
 
         setState(() {
           _isHovered = false;
-          _currentSlideOffset =
-              FloatingWidgetConstants.slideOutOffset;
+          _currentSlideOffset = FloatingWidgetConstants.slideOutOffset;
         });
 
-        // No window manipulation - just visual animation
+        // Enable click-through when collapsed
+        ClickThroughService.setClickThroughEnabled(true);
       },
     );
   }
@@ -415,8 +429,7 @@ class _FloatingWidgetState
   }
 
   /// Builds the main animated container that slides horizontally
-  /// Uses MouseRegion with onHover to track cursor position and enable click-through
-  /// on transparent areas
+  /// Uses MouseRegion with position check to only respond to hover in visible area
   Widget _buildAnimatedContainer(
     List<dynamic> projects,
     dynamic currentProject,
@@ -433,7 +446,20 @@ class _FloatingWidgetState
         await windowManager.startDragging();
       },
       child: MouseRegion(
-        onEnter: (_) => _onMouseEnter(),
+        onHover: (event) {
+          // Calculate the visible area based on slide offset
+          // When collapsed, only the rightmost ~60px is visible
+          final visibleWidth = FloatingWidgetConstants.fixedWidgetWidth -
+              _currentSlideOffset;
+
+          // Check if pointer is in the visible area (from right edge)
+          final isInVisibleArea =
+              event.localPosition.dx >= (FloatingWidgetConstants.fixedWidgetWidth - visibleWidth);
+
+          if (isInVisibleArea && !_isHovered) {
+            _onMouseEnter();
+          }
+        },
         onExit: (_) => _onMouseExit(),
         child: Stack(
           children: [

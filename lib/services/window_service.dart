@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
+import 'click_through_service.dart';
 import 'logger_service.dart';
 
 class WindowService {
@@ -115,7 +116,7 @@ class WindowService {
   }
 
   // Switch to floating widget mode
-  // Window is always 280px wide, positioned at right edge of screen
+  // Window is always 280px wide, animation handles visual collapse
   static const double _floatingWidth = 280.0;
   static const double _floatingHeight = 80.0;
 
@@ -126,8 +127,8 @@ class WindowService {
       _isFloatingMode = true;
       _logger.info('Configuring floating mode...');
 
-      // Hide window during transition to prevent visual jump
-      await windowManager.hide();
+      // Fade out for smooth transition
+      await windowManager.setOpacity(0);
 
       // Set window properties - always 280px wide
       await windowManager.setAlwaysOnTop(true);
@@ -139,7 +140,7 @@ class WindowService {
         const Size(_floatingWidth, _floatingHeight),
       );
 
-      // Position window at right edge of screen (fully visible)
+      // Position window at right edge of screen
       try {
         final primaryDisplay = await screenRetriever
             .getPrimaryDisplay();
@@ -165,7 +166,6 @@ class WindowService {
         );
         await windowManager.setHasShadow(false);
         await windowManager.setAsFrameless();
-        await windowManager.setIgnoreMouseEvents(false);
 
         // On macOS, setAsFrameless() may reduce window height - compensate
         final sizeAfterFrameless = await windowManager
@@ -179,8 +179,21 @@ class WindowService {
         _logger.warning('Could not set frameless mode: $e');
       }
 
-      // Show window after repositioning is complete
+      // Ensure window is visible and can receive mouse events
       await windowManager.show();
+      await windowManager.setIgnoreMouseEvents(false);
+
+      // Small delay for window to settle before fading in
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Fade in
+      await windowManager.setOpacity(1);
+
+      // Wait for window to be fully ready before enabling click-through
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Enable click-through for collapsed state
+      await ClickThroughService.setClickThroughEnabled(true);
 
       _logger.info('Window configured for floating mode');
     } catch (e, stackTrace) {
@@ -192,6 +205,7 @@ class WindowService {
       _isFloatingMode = false;
       // Make sure window is visible even on error
       await windowManager.show();
+      await windowManager.setOpacity(1);
       rethrow;
     }
   }
@@ -204,8 +218,11 @@ class WindowService {
       _isFloatingMode = false;
       _logger.info('Configuring main mode...');
 
-      // Hide window during transition to prevent visual jump
-      await windowManager.hide();
+      // Disable click-through for main mode
+      await ClickThroughService.disableClickThrough();
+
+      // Fade out for smooth transition
+      await windowManager.setOpacity(0);
 
       // Restore window settings
       await windowManager.setAlwaysOnTop(false);
@@ -228,9 +245,15 @@ class WindowService {
       await windowManager.setSize(const Size(380, 580));
       await windowManager.center();
 
-      // Show window after repositioning is complete
+      // Ensure window is visible
       await windowManager.show();
       await windowManager.focus();
+
+      // Small delay for window to settle before fading in
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Fade in
+      await windowManager.setOpacity(1);
 
       _logger.info(
         'Window configured for main mode (380x580)',
@@ -244,6 +267,7 @@ class WindowService {
       _isFloatingMode = true;
       // Make sure window is visible even on error
       await windowManager.show();
+      await windowManager.setOpacity(1);
       rethrow;
     }
   }

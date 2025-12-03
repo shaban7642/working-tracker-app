@@ -55,13 +55,13 @@ class WindowModeNotifier extends StateNotifier<bool> {
     try {
       _logger.info('Switching to main mode...');
 
-      // Set state FIRST to hide the floating widget immediately
-      // This prevents the floating widget animation from showing
+      // Resize window FIRST (this hides window during transition)
+      // This prevents overflow errors when dashboard renders
+      await _windowService.switchToMainMode();
+
+      // THEN update UI state after window is resized
       state = false;
       _logger.info('Window mode: Main (UI updated)');
-
-      // Then configure window to resize
-      await _windowService.switchToMainMode();
 
       _logger.info('Window configured for main mode');
     } catch (e, stackTrace) {
