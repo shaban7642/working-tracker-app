@@ -18,16 +18,19 @@ FlutterWindow::~FlutterWindow() {
 }
 
 void FlutterWindow::SetClickThroughEnabled(bool enabled) {
-  click_through_enabled_ = enabled;
   HWND hwnd = GetHandle();
   if (!hwnd) return;
 
   if (enabled) {
+    // Set flag FIRST before starting timer
+    click_through_enabled_ = true;
+
     // Reset state tracking
     is_transparent_ = false;
 
     // Start polling mouse position to toggle transparency based on hover
-    if (mouse_poll_timer_ == 0) {
+    // Only start timer if click-through is still enabled (prevent race conditions)
+    if (mouse_poll_timer_ == 0 && click_through_enabled_) {
       mouse_poll_timer_ = SetTimer(hwnd, 1, 30, MousePollTimerProc);
     }
 
@@ -37,21 +40,29 @@ void FlutterWindow::SetClickThroughEnabled(bool enabled) {
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
     is_transparent_ = true;
   } else {
-    // Stop polling
+    // Set flag to FALSE FIRST to prevent any timer callbacks from running
+    click_through_enabled_ = false;
+
+    // Stop polling - any pending timer callbacks will be blocked by the flag above
     if (mouse_poll_timer_ != 0) {
       KillTimer(hwnd, mouse_poll_timer_);
       mouse_poll_timer_ = 0;
     }
+
     // ALWAYS remove WS_EX_TRANSPARENT when disabling (don't rely on cached state)
     // This prevents state desync after multiple mode switches
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
     SetWindowLongPtr(hwnd, GWL_EXSTYLE, (exStyle | WS_EX_LAYERED) & ~WS_EX_TRANSPARENT);
     is_transparent_ = false;
+
+    // Force window update to ensure the style change takes effect immediately
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
   }
 }
 
 void CALLBACK FlutterWindow::MousePollTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
-  if (g_flutter_window) {
+  if (g_flutter_window && g_flutter_window->click_through_enabled_) {
     g_flutter_window->UpdateTransparencyForMousePosition();
   }
 }

@@ -218,8 +218,12 @@ class WindowService {
       _isFloatingMode = false;
       _logger.info('Configuring main mode...');
 
-      // Disable click-through for main mode
+      // Disable click-through IMMEDIATELY before any other changes
+      // This ensures the window becomes clickable right away
       await ClickThroughService.disableClickThrough();
+
+      // Small delay to ensure native code processes the disable command
+      await Future.delayed(const Duration(milliseconds: 50));
 
       // Fade out for smooth transition
       await windowManager.setOpacity(0);
@@ -254,6 +258,10 @@ class WindowService {
 
       // Fade in
       await windowManager.setOpacity(1);
+
+      // Ensure click-through is disabled one more time after all window changes
+      // This is a safety measure to prevent any edge cases
+      await ClickThroughService.disableClickThrough();
 
       _logger.info(
         'Window configured for main mode (380x580)',
