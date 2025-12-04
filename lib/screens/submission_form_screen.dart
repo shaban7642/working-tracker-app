@@ -19,22 +19,30 @@ import '../widgets/gradient_button.dart';
 class SubmissionFormScreen extends ConsumerStatefulWidget {
   final List<Project> projects;
 
-  const SubmissionFormScreen({super.key, required this.projects});
+  const SubmissionFormScreen({
+    super.key,
+    required this.projects,
+  });
 
   @override
   ConsumerState<SubmissionFormScreen> createState() =>
       _SubmissionFormScreenState();
 }
 
-class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
+class _SubmissionFormScreenState
+    extends ConsumerState<SubmissionFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _reportSubmissionService = ReportSubmissionService();
+  final _reportSubmissionService =
+      ReportSubmissionService();
   final _windowService = WindowService();
 
   // Map of project ID to list of tasks for that project
   late Map<String, List<TaskFormData>> _projectTasks;
 
   bool _isSubmitting = false;
+
+  // Image hover preview state
+  OverlayEntry? _previewOverlay;
 
   @override
   void initState() {
@@ -50,14 +58,18 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       (p) => p.totalTime.inSeconds > 0,
     )) {
       // Get pre-added tasks from the provider
-      final preAddedTasks = ref.read(projectTasksProvider(project.id));
+      final preAddedTasks = ref.read(
+        projectTasksProvider(project.id),
+      );
 
       if (preAddedTasks.isNotEmpty) {
         // Create TaskFormData from pre-added tasks
         _projectTasks[project.id] = preAddedTasks
             .map(
               (task) => TaskFormData(
-                taskNameController: TextEditingController(text: task.taskName),
+                taskNameController: TextEditingController(
+                  text: task.taskName,
+                ),
                 taskDescController: TextEditingController(),
                 attachments: [],
               ),
@@ -78,6 +90,8 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
 
   @override
   void dispose() {
+    // Remove any active preview overlay
+    _hideImagePreview();
     // Dispose all controllers
     for (var tasks in _projectTasks.values) {
       for (var task in tasks) {
@@ -86,6 +100,95 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       }
     }
     super.dispose();
+  }
+
+  void _showImagePreview(
+    String path,
+    Offset globalPosition,
+  ) {
+    _hideImagePreview();
+
+    final overlay = Overlay.of(context);
+
+    // Get the app window bounds
+    final RenderBox? renderBox =
+        context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final appPosition = renderBox.localToGlobal(
+      Offset.zero,
+    );
+    final appSize = renderBox.size;
+
+    // Calculate available space above the thumbnail
+    final spaceAbove =
+        globalPosition.dy -
+        appPosition.dy -
+        20; // 20px padding
+
+    // Max dimensions constrained to app bounds
+    final maxWidth =
+        appSize.width - 40; // 20px padding on each side
+    final maxHeight = spaceAbove > 100 ? spaceAbove : 200.0;
+
+    // Center horizontally in the app
+    final left = appPosition.dx + 20; // 20px from left edge
+
+    // Position above the thumbnail
+    final top = globalPosition.dy - maxHeight - 10;
+
+    _previewOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        left: left,
+        top: top > appPosition.dy
+            ? top
+            : appPosition.dy + 10,
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            constraints: BoxConstraints(
+              maxWidth: maxWidth,
+              maxHeight: maxHeight,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppTheme.borderColor,
+              ),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(
+                File(path),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const SizedBox(
+                    width: 200,
+                    height: 150,
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image,
+                        size: 48,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(_previewOverlay!);
+  }
+
+  void _hideImagePreview() {
+    _previewOverlay?.remove();
+    _previewOverlay = null;
   }
 
   void _addTask(String projectId) {
@@ -102,23 +205,31 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
 
   void _removeTask(String projectId, int taskIndex) {
     if (_projectTasks[projectId]!.length <= 1) {
-      context.showErrorSnackBar('Each project must have at least one task');
+      context.showErrorSnackBar(
+        'Each project must have at least one task',
+      );
       return;
     }
 
     setState(() {
-      final task = _projectTasks[projectId]!.removeAt(taskIndex);
+      final task = _projectTasks[projectId]!.removeAt(
+        taskIndex,
+      );
       task.taskNameController.dispose();
       task.taskDescController.dispose();
     });
   }
 
-  Future<void> _pickFiles(String projectId, int taskIndex) async {
+  Future<void> _pickFiles(
+    String projectId,
+    int taskIndex,
+  ) async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      FilePickerResult?
+      result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
-        type:
-            FileType.any, // Changed from custom to any for better compatibility
+        type: FileType
+            .any, // Changed from custom to any for better compatibility
       );
 
       if (result != null && result.files.isNotEmpty) {
@@ -133,55 +244,74 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
 
         if (filePaths.isNotEmpty) {
           setState(() {
-            _projectTasks[projectId]![taskIndex].attachments.addAll(filePaths);
+            _projectTasks[projectId]![taskIndex].attachments
+                .addAll(filePaths);
           });
         }
       }
     } catch (e) {
       if (mounted) {
-        context.showErrorSnackBar('Error picking files: $e');
+        context.showErrorSnackBar(
+          'Error picking files: $e',
+        );
       }
     }
   }
 
-  void _removeAttachment(String projectId, int taskIndex, int attachmentIndex) {
+  void _removeAttachment(
+    String projectId,
+    int taskIndex,
+    int attachmentIndex,
+  ) {
     setState(() {
-      _projectTasks[projectId]![taskIndex].attachments.removeAt(
-        attachmentIndex,
-      );
+      _projectTasks[projectId]![taskIndex].attachments
+          .removeAt(attachmentIndex);
     });
   }
 
-  Future<void> _takeScreenshot(String projectId, int taskIndex) async {
+  Future<void> _takeScreenshot(
+    String projectId,
+    int taskIndex,
+  ) async {
     try {
       // Minimize the window before taking screenshot
       await windowManager.minimize();
 
       // Wait a moment for the window to minimize
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(
+        const Duration(milliseconds: 300),
+      );
 
       // Use screen_capturer for cross-platform support (Windows, macOS, Linux)
-      CapturedData? capturedData = await screenCapturer.capture(
-        mode: CaptureMode.region, // Interactive region selection
-      );
+      CapturedData? capturedData = await screenCapturer
+          .capture(
+            mode: CaptureMode
+                .region, // Interactive region selection
+          );
 
       // Restore the window after screenshot
       await windowManager.restore();
       await windowManager.focus();
 
-      if (capturedData != null && capturedData.imageBytes != null) {
+      if (capturedData != null &&
+          capturedData.imageBytes != null) {
         // Save to temp file
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final timestamp =
+            DateTime.now().millisecondsSinceEpoch;
         final tempDir = Directory.systemTemp;
-        final screenshotPath = '${tempDir.path}/screenshot_$timestamp.png';
+        final screenshotPath =
+            '${tempDir.path}/screenshot_$timestamp.png';
         final file = File(screenshotPath);
         await file.writeAsBytes(capturedData.imageBytes!);
 
         setState(() {
-          _projectTasks[projectId]![taskIndex].attachments.add(screenshotPath);
+          _projectTasks[projectId]![taskIndex].attachments
+              .add(screenshotPath);
         });
         if (mounted) {
-          context.showSuccessSnackBar('Screenshot captured');
+          context.showSuccessSnackBar(
+            'Screenshot captured',
+          );
         }
       }
     } catch (e) {
@@ -190,14 +320,18 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       await windowManager.focus();
 
       if (mounted) {
-        context.showErrorSnackBar('Error taking screenshot: $e');
+        context.showErrorSnackBar(
+          'Error taking screenshot: $e',
+        );
       }
     }
   }
 
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) {
-      context.showErrorSnackBar('Please fill in all required fields');
+      context.showErrorSnackBar(
+        'Please fill in all required fields',
+      );
       return;
     }
 
@@ -205,7 +339,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
     bool hasTaskName = false;
     for (var tasks in _projectTasks.values) {
       for (var task in tasks) {
-        if (task.taskNameController.text.trim().isNotEmpty) {
+        if (task.taskNameController.text
+            .trim()
+            .isNotEmpty) {
           hasTaskName = true;
           break;
         }
@@ -214,7 +350,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
     }
 
     if (!hasTaskName) {
-      context.showErrorSnackBar('Please provide at least one task name');
+      context.showErrorSnackBar(
+        'Please provide at least one task name',
+      );
       return;
     }
 
@@ -239,8 +377,12 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
           allTasks.add(
             TaskSubmission(
               projectName: project.name,
-              taskName: taskData.taskNameController.text.trim(),
-              taskDescription: taskData.taskDescController.text.trim(),
+              taskName: taskData.taskNameController.text
+                  .trim(),
+              taskDescription: taskData
+                  .taskDescController
+                  .text
+                  .trim(),
               attachmentPaths: taskData.attachments,
             ),
           );
@@ -256,14 +398,21 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       );
 
       // Submit report
-      final result = await _reportSubmissionService.submitReport(report);
+      final result = await _reportSubmissionService
+          .submitReport(report);
 
       if (mounted) {
         if (result['success'] == true) {
           // Clear all persisted tasks after successful submission
-          await ref.read(tasksProvider.notifier).clearAllTasks();
-          context.showSuccessSnackBar('Report submitted successfully!');
-          Navigator.of(context).pop(true); // Return true to indicate success
+          await ref
+              .read(tasksProvider.notifier)
+              .clearAllTasks();
+          context.showSuccessSnackBar(
+            'Report submitted successfully!',
+          );
+          Navigator.of(
+            context,
+          ).pop(true); // Return true to indicate success
         } else {
           context.showErrorSnackBar(
             result['message'] ?? 'Failed to submit report',
@@ -272,7 +421,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       }
     } catch (e) {
       if (mounted) {
-        context.showErrorSnackBar('Error submitting report: $e');
+        context.showErrorSnackBar(
+          'Error submitting report: $e',
+        );
       }
     } finally {
       if (mounted) {
@@ -293,31 +444,44 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
       return Scaffold(
         backgroundColor: AppTheme.surfaceColor,
         body: Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 40.0, 16.0, 16.0),
+          padding: const EdgeInsets.fromLTRB(
+            16.0,
+            40.0,
+            16.0,
+            16.0,
+          ),
           child: Column(
             children: [
               // Header with back button
               Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, size: 20),
-                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        Navigator.of(context).pop(),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     'Submit Report',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ],
               ),
               Expanded(
                 child: Center(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisAlignment:
+                        MainAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.timer_off,
@@ -345,7 +509,12 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
     return Scaffold(
       backgroundColor: AppTheme.surfaceColor,
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(16.0, 40.0, 16.0, 16.0),
+        padding: const EdgeInsets.fromLTRB(
+          16.0,
+          40.0,
+          16.0,
+          16.0,
+        ),
         child: Form(
           key: _formKey,
           child: Column(
@@ -355,20 +524,29 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, size: 20),
-                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        Navigator.of(context).pop(),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Submit Report',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
                         Text(
                           '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} • ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime))}',
@@ -390,7 +568,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                   padding: EdgeInsets.zero,
                   itemCount: projectsWithTime.length,
                   itemBuilder: (context, projectIndex) {
-                    return _buildProjectCard(projectsWithTime[projectIndex]);
+                    return _buildProjectCard(
+                      projectsWithTime[projectIndex],
+                    );
                   },
                 ),
               ),
@@ -398,7 +578,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               // Submit button
               const SizedBox(height: 12),
               GradientButton(
-                onPressed: _isSubmitting ? null : _submitReport,
+                onPressed: _isSubmitting
+                    ? null
+                    : _submitReport,
                 height: 40,
                 child: _isSubmitting
                     ? const SizedBox(
@@ -410,9 +592,14 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                         ),
                       )
                     : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisAlignment:
+                            MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.send, size: 16, color: Colors.white),
+                          Icon(
+                            Icons.send,
+                            size: 16,
+                            color: Colors.white,
+                          ),
                           SizedBox(width: 8),
                           Text(
                             'Submit Report',
@@ -449,7 +636,8 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
             children: [
               Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   children: [
                     Text(
                       project.name,
@@ -460,7 +648,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      DateTimeUtils.formatDuration(project.totalTime),
+                      DateTimeUtils.formatDuration(
+                        project.totalTime,
+                      ),
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppTheme.textSecondary,
@@ -484,7 +674,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                   children: [
                     Icon(Icons.add, size: 14),
                     SizedBox(width: 4),
-                    Text('Task', style: TextStyle(fontSize: 11)),
+                    Text(
+                      'Task',
+                      style: TextStyle(fontSize: 11),
+                    ),
                   ],
                 ),
               ),
@@ -540,7 +733,8 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               const Spacer(),
               if (totalTasks > 1)
                 TextButton(
-                  onPressed: () => _removeTask(projectId, taskIndex),
+                  onPressed: () =>
+                      _removeTask(projectId, taskIndex),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -550,7 +744,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: [Icon(Icons.delete_outline, size: 14)],
+                    children: [
+                      Icon(Icons.delete_outline, size: 14),
+                    ],
                   ),
                 ),
             ],
@@ -567,7 +763,7 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                 color: AppTheme.textHint,
                 fontSize: 12,
               ),
-              hintText: 'e.g., Design Review',
+              hintText: 'keep It Shoooooooooort *_^',
               hintStyle: const TextStyle(
                 color: AppTheme.textHint,
                 fontSize: 12,
@@ -625,7 +821,11 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
           const SizedBox(height: 8),
 
           // Attachments section with drag and drop
-          _buildAttachmentsSection(projectId, taskIndex, taskData),
+          _buildAttachmentsSection(
+            projectId,
+            taskIndex,
+            taskData,
+          ),
         ],
       ),
     );
@@ -689,7 +889,8 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                 ),
                 const Spacer(),
                 TextButton(
-                  onPressed: () => _takeScreenshot(projectId, taskIndex),
+                  onPressed: () =>
+                      _takeScreenshot(projectId, taskIndex),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -701,13 +902,17 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                     children: [
                       Icon(Icons.screenshot, size: 14),
                       SizedBox(width: 2),
-                      Text('Screenshot', style: TextStyle(fontSize: 10)),
+                      Text(
+                        'Screenshot',
+                        style: TextStyle(fontSize: 10),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 4),
                 TextButton(
-                  onPressed: () => _pickFiles(projectId, taskIndex),
+                  onPressed: () =>
+                      _pickFiles(projectId, taskIndex),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -719,7 +924,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                     children: [
                       Icon(Icons.attach_file, size: 14),
                       SizedBox(width: 2),
-                      Text('Files', style: TextStyle(fontSize: 10)),
+                      Text(
+                        'Files',
+                        style: TextStyle(fontSize: 10),
+                      ),
                     ],
                   ),
                 ),
@@ -731,10 +939,14 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: taskData.isDragging
-                      ? AppTheme.primaryColor.withValues(alpha: 0.2)
+                      ? AppTheme.primaryColor.withValues(
+                          alpha: 0.2,
+                        )
                       : AppTheme.backgroundColor,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
@@ -756,7 +968,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      taskData.isDragging ? 'Drop here' : 'Drag & drop files',
+                      taskData.isDragging
+                          ? 'Drop here'
+                          : 'Drag & drop files',
                       style: TextStyle(
                         fontSize: 10,
                         color: taskData.isDragging
@@ -769,80 +983,114 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
               ),
             ],
 
-            // File previews (compact)
+            // File previews (grid - 4 per row)
             if (taskData.attachments.isNotEmpty) ...[
               const SizedBox(height: 6),
-              SizedBox(
-                height: 60,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: taskData.attachments.length,
-                  itemBuilder: (context, attachmentIndex) {
-                    final path = taskData.attachments[attachmentIndex];
-                    final fileName = path.split(Platform.pathSeparator).last;
-                    final isImage = _isImageFile(path);
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: taskData.attachments
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                      final attachmentIndex = entry.key;
+                      final path = entry.value;
+                      final fileName = path
+                          .split(Platform.pathSeparator)
+                          .last;
+                      final isImage = _isImageFile(path);
 
-                    return Container(
-                      width: 60,
-                      height: 60,
-                      margin: const EdgeInsets.only(right: 6),
-                      child: Stack(
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: AppTheme.borderColor),
-                              color: AppTheme.backgroundColor,
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(5),
-                              child: isImage
-                                  ? Image.file(
-                                      File(path),
-                                      fit: BoxFit.cover,
-                                      width: 60,
-                                      height: 60,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                            return _buildFileIconCompact(
-                                              fileName,
-                                            );
-                                          },
-                                    )
-                                  : _buildFileIconCompact(fileName),
-                            ),
-                          ),
-                          Positioned(
-                            top: 2,
-                            right: 2,
-                            child: GestureDetector(
-                              onTap: () => _removeAttachment(
-                                projectId,
-                                taskIndex,
-                                attachmentIndex,
-                              ),
-                              child: Container(
-                                width: 16,
-                                height: 16,
+                      return MouseRegion(
+                        onEnter: isImage
+                            ? (event) => _showImagePreview(
+                                path,
+                                event.position,
+                              )
+                            : null,
+                        onExit: isImage
+                            ? (_) => _hideImagePreview()
+                            : null,
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
                                 decoration: BoxDecoration(
-                                  color: AppTheme.errorColor,
-                                  shape: BoxShape.circle,
+                                  borderRadius:
+                                      BorderRadius.circular(
+                                        6,
+                                      ),
+                                  border: Border.all(
+                                    color: AppTheme
+                                        .borderColor,
+                                  ),
+                                  color: AppTheme
+                                      .backgroundColor,
                                 ),
-                                child: const Icon(
-                                  Icons.close,
-                                  size: 10,
-                                  color: Colors.white,
+                                child: ClipRRect(
+                                  borderRadius:
+                                      BorderRadius.circular(
+                                        5,
+                                      ),
+                                  child: isImage
+                                      ? Image.file(
+                                          File(path),
+                                          fit: BoxFit.cover,
+                                          width: 60,
+                                          height: 60,
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) {
+                                                return _buildFileIconCompact(
+                                                  fileName,
+                                                );
+                                              },
+                                        )
+                                      : _buildFileIconCompact(
+                                          fileName,
+                                        ),
                                 ),
                               ),
-                            ),
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _removeAttachment(
+                                        projectId,
+                                        taskIndex,
+                                        attachmentIndex,
+                                      ),
+                                  child: Container(
+                                    width: 16,
+                                    height: 16,
+                                    decoration:
+                                        BoxDecoration(
+                                          color: AppTheme
+                                              .errorColor,
+                                          shape: BoxShape
+                                              .circle,
+                                        ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 10,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        ),
+                      );
+                    })
+                    .toList(),
               ),
             ],
           ],
@@ -852,7 +1100,10 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
   }
 
   Widget _buildFileIconCompact(String fileName) {
-    final extension = fileName.toLowerCase().split('.').last;
+    final extension = fileName
+        .toLowerCase()
+        .split('.')
+        .last;
     IconData iconData;
     Color iconColor;
 
@@ -877,7 +1128,9 @@ class _SubmissionFormScreenState extends ConsumerState<SubmissionFormScreen> {
         Icon(iconData, size: 20, color: iconColor),
         const SizedBox(height: 2),
         Text(
-          fileName.length > 8 ? '${fileName.substring(0, 6)}...' : fileName,
+          fileName.length > 8
+              ? '${fileName.substring(0, 6)}...'
+              : fileName,
           style: const TextStyle(fontSize: 7),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,

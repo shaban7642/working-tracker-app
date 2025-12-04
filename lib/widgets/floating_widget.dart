@@ -59,6 +59,9 @@ class _FloatingWidgetState
   /// Which project has the task entry expanded
   String? _expandedTaskEntryProjectId;
 
+  /// Which project is currently being hovered (for animation)
+  String? _hoveredProjectId;
+
   /// Current horizontal slide offset for the widget animation
   double _currentSlideOffset =
       FloatingWidgetConstants.slideOutOffset;
@@ -257,7 +260,8 @@ class _FloatingWidgetState
 
     setState(() {
       _isHovered = true;
-      _currentSlideOffset = FloatingWidgetConstants.slideInOffset;
+      _currentSlideOffset =
+          FloatingWidgetConstants.slideInOffset;
     });
 
     // Disable click-through - make window clickable when hovered
@@ -278,7 +282,8 @@ class _FloatingWidgetState
 
         setState(() {
           _isHovered = false;
-          _currentSlideOffset = FloatingWidgetConstants.slideOutOffset;
+          _currentSlideOffset =
+              FloatingWidgetConstants.slideOutOffset;
         });
 
         // Enable click-through when collapsed
@@ -439,7 +444,9 @@ class _FloatingWidgetState
     return GestureDetector(
       // Allow vertical-only dragging while keeping window stuck to right edge
       onPanStart: (_) async {
-        if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+        if (!Platform.isWindows &&
+            !Platform.isLinux &&
+            !Platform.isMacOS) {
           return;
         }
         // Start dragging - we'll constrain it to vertical in onPanUpdate
@@ -449,12 +456,15 @@ class _FloatingWidgetState
         onHover: (event) {
           // Calculate the visible area based on slide offset
           // When collapsed, only the rightmost ~60px is visible
-          final visibleWidth = FloatingWidgetConstants.fixedWidgetWidth -
+          final visibleWidth =
+              FloatingWidgetConstants.fixedWidgetWidth -
               _currentSlideOffset;
 
           // Check if pointer is in the visible area (from right edge)
           final isInVisibleArea =
-              event.localPosition.dx >= (FloatingWidgetConstants.fixedWidgetWidth - visibleWidth);
+              event.localPosition.dx >=
+              (FloatingWidgetConstants.fixedWidgetWidth -
+                  visibleWidth);
 
           if (isInVisibleArea && !_isHovered) {
             _onMouseEnter();
@@ -471,7 +481,8 @@ class _FloatingWidgetState
               right: -_currentSlideOffset,
               top: 0,
               bottom: 0,
-              width: FloatingWidgetConstants.fixedWidgetWidth,
+              width:
+                  FloatingWidgetConstants.fixedWidgetWidth,
               child: SizedBox(
                 height: _getWidgetHeight(projects.length),
                 child: _buildMainContainer(
@@ -612,32 +623,30 @@ class _FloatingWidgetState
           vertical: FloatingWidgetConstants.verticalPadding,
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment
-              .start, // Always left-aligned
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Icon - always visible
+            // Icon - always visible (left)
             _buildProjectIcon(),
             SizedBox(
               width:
                   FloatingWidgetConstants.iconTextSpacing,
             ),
 
-            // Content - always visible (no animation needed since whole widget slides)
+            // Project info - centered in the middle
             Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildProjectInfo(
-                    currentProject,
-                    currentTimer,
-                    sessionTotalTime,
-                  ),
-                  _buildDropdownArrow(projects),
-                  _buildMaximizeButton(),
-                ],
+              child: _buildProjectInfo(
+                currentProject,
+                sessionTotalTime,
               ),
             ),
+
+            // Buttons grouped on the right
+            if (currentTimer != null) ...[
+              _buildSubmitButton(),
+              const SizedBox(width: 4),
+            ],
+            _buildDropdownArrow(projects),
+            _buildMaximizeButton(),
           ],
         ),
       ),
@@ -653,70 +662,47 @@ class _FloatingWidgetState
     );
   }
 
-  /// Builds the project name and timer display
+  /// Builds the project name and timer display (centered)
   Widget _buildProjectInfo(
     dynamic currentProject,
-    dynamic currentTimer,
     Duration sessionTotalTime,
   ) {
-    return Flexible(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Timer and project info
-          Flexible(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Project name
-                Text(
-                  currentProject?.name ?? 'Select Project',
-                  style: TextStyle(
-                    color: currentProject == null
-                        ? AppTheme.textSecondary
-                        : AppTheme.textPrimary,
-                    fontSize: FloatingWidgetConstants
-                        .projectNameFontSize,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-                SizedBox(
-                  height: FloatingWidgetConstants
-                      .nameTimerSpacing,
-                ),
-
-                // Timer display - Shows session total time (sum of all projects)
-                Text(
-                  DateTimeUtils.formatDuration(
-                    sessionTotalTime,
-                  ),
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: FloatingWidgetConstants
-                        .timerFontSize,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
-                    letterSpacing: FloatingWidgetConstants
-                        .timerLetterSpacing,
-                  ),
-                  overflow: TextOverflow.clip,
-                  maxLines: 1,
-                ),
-              ],
-            ),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Project name
+        Text(
+          currentProject?.name ?? 'Select Project',
+          style: TextStyle(
+            color: currentProject == null
+                ? AppTheme.textSecondary
+                : AppTheme.textPrimary,
+            fontSize: FloatingWidgetConstants.projectNameFontSize,
+            fontWeight: FontWeight.w500,
           ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+        SizedBox(
+          height: FloatingWidgetConstants.nameTimerSpacing,
+        ),
 
-          // Submit button (next to timer)
-          if (currentTimer != null) ...[
-            const SizedBox(width: 8),
-            _buildSubmitButton(),
-          ],
-        ],
-      ),
+        // Timer display - Shows session total time (sum of all projects)
+        Text(
+          DateTimeUtils.formatDuration(sessionTotalTime),
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: FloatingWidgetConstants.timerFontSize,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'monospace',
+            letterSpacing: FloatingWidgetConstants.timerLetterSpacing,
+          ),
+          overflow: TextOverflow.clip,
+          maxLines: 1,
+        ),
+      ],
     );
   }
 
@@ -933,118 +919,227 @@ class _FloatingWidgetState
   ) {
     // Check if this project's timer is currently active
     final isActive = currentTimer?.projectId == project.id;
-    final projectTasks = ref.watch(projectTasksProvider(project.id));
-    final isTaskEntryExpanded = _expandedTaskEntryProjectId == project.id;
+    final projectTasks = ref.watch(
+      projectTasksProvider(project.id),
+    );
+    final isTaskEntryExpanded =
+        _expandedTaskEntryProjectId == project.id;
+    final isHovered = _hoveredProjectId == project.id;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Project row
-        InkWell(
-          onTap: () => _onProjectTap(
-            project,
-            isActive,
-            currentTimer,
-            projectCount,
-          ),
-          child: Container(
-            height: FloatingWidgetConstants.projectItemHeight,
-            padding: const EdgeInsets.symmetric(
-              horizontal: FloatingWidgetConstants
-                  .dropdownItemHorizontalPadding,
-              vertical: FloatingWidgetConstants
-                  .dropdownItemVerticalPadding,
-            ),
-            child: Row(
-              children: [
-                // Project icon
-                Icon(
-                  Icons.apartment,
-                  size: FloatingWidgetConstants
-                      .dropdownProjectIconSize,
-                  color: isActive
-                      ? AppTheme.primaryColor
-                      : AppTheme.textSecondary,
+        // Project row with hover animation
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = constraints.maxWidth;
+            return MouseRegion(
+              onEnter: (_) => setState(
+                () => _hoveredProjectId = project.id,
+              ),
+              onExit: (_) =>
+                  setState(() => _hoveredProjectId = null),
+              child: Container(
+                height: FloatingWidgetConstants
+                    .projectItemHeight,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FloatingWidgetConstants
+                      .dropdownItemHorizontalPadding,
+                  vertical: FloatingWidgetConstants
+                      .dropdownItemVerticalPadding,
                 ),
-                SizedBox(
-                  width: FloatingWidgetConstants
-                      .dropdownIconSpacing,
-                ),
-
-                // Project name (takes remaining space)
-                Expanded(
-                  child: Text(
-                    project.name,
-                    style: TextStyle(
-                      color: isActive
-                          ? AppTheme.primaryColor
-                          : AppTheme.textPrimary,
-                      fontSize: FloatingWidgetConstants
-                          .dropdownProjectFontSize,
-                      fontWeight: isActive
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                    ),
-                  ),
-                ),
-
-                // Project total time (if > 0)
-                if (project.totalTime.inSeconds > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Text(
-                      DateTimeUtils.formatDuration(
-                        project.totalTime,
+                child: Row(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
+                  mainAxisAlignment:
+                      MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Project card - shrinks to 70% on hover (for non-active projects)
+                    AnimatedContainer(
+                      duration: const Duration(
+                        milliseconds: 200,
                       ),
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: FloatingWidgetConstants
-                            .dropdownTimeFontSize,
-                        fontFamily: 'monospace',
+                      curve: Curves.easeOutCubic,
+                      width: (isHovered && !isActive)
+                          ? (availableWidth - 24) *
+                                0.7 // 24 = horizontal padding
+                          : availableWidth - 24,
+                      child: InkWell(
+                        onTap: () {
+                          // Toggle task expansion
+                          setState(() {
+                            if (isTaskEntryExpanded) {
+                              _expandedTaskEntryProjectId =
+                                  null;
+                            } else {
+                              _expandedTaskEntryProjectId =
+                                  project.id;
+                            }
+                          });
+                        },
+
+                        child: Expanded(
+                          child: Row(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.center,
+                            children: [
+                              // Project icon
+                              Icon(
+                                Icons.apartment,
+                                size: FloatingWidgetConstants
+                                    .dropdownProjectIconSize,
+                                color: isActive
+                                    ? AppTheme.primaryColor
+                                    : AppTheme
+                                          .textSecondary,
+                              ),
+                              SizedBox(
+                                width:
+                                    FloatingWidgetConstants
+                                        .dropdownIconSpacing,
+                              ),
+
+                              // Project name with task count
+                              Expanded(
+                                child: Text(
+                                  projectTasks.isNotEmpty
+                                      ? '${project.name} (${projectTasks.length})'
+                                      : project.name,
+                                  style: TextStyle(
+                                    color: isActive
+                                        ? AppTheme
+                                              .primaryColor
+                                        : AppTheme
+                                              .textPrimary,
+                                    fontSize:
+                                        FloatingWidgetConstants
+                                            .dropdownProjectFontSize,
+                                    fontWeight: isActive
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                  overflow:
+                                      TextOverflow.ellipsis,
+                                ),
+                              ),
+
+                              // Project total time (if > 0)
+                              if (project
+                                      .totalTime
+                                      .inSeconds >
+                                  0)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(
+                                        right: 6,
+                                      ),
+                                  child: Text(
+                                    DateTimeUtils.formatDuration(
+                                      project.totalTime,
+                                    ),
+                                    style: const TextStyle(
+                                      color: AppTheme
+                                          .textSecondary,
+                                      fontSize:
+                                          FloatingWidgetConstants
+                                              .dropdownTimeFontSize,
+                                      fontFamily:
+                                          'monospace',
+                                    ),
+                                  ),
+                                ),
+
+                              // Active indicator dot (green circle)
+                              if (isActive)
+                                Container(
+                                  margin:
+                                      const EdgeInsets.only(
+                                        right: 6,
+                                      ),
+                                  width: FloatingWidgetConstants
+                                      .activeIndicatorSize,
+                                  height:
+                                      FloatingWidgetConstants
+                                          .activeIndicatorSize,
+                                  decoration:
+                                      const BoxDecoration(
+                                        color: AppTheme
+                                            .successColor,
+                                        shape:
+                                            BoxShape.circle,
+                                      ),
+                                ),
+
+                              // Expand arrow indicator
+                              Icon(
+                                isTaskEntryExpanded
+                                    ? Icons
+                                          .keyboard_arrow_up
+                                    : Icons
+                                          .keyboard_arrow_down,
+                                size: 18,
+                                color:
+                                    AppTheme.textSecondary,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ),
 
-                // Active indicator dot (green circle)
-                if (isActive)
-                  Container(
-                    margin: const EdgeInsets.only(
-                      right: 6,
+                    // Green "Start Timer" button - slides in from right
+                    AnimatedContainer(
+                      duration: const Duration(
+                        milliseconds: 200,
+                      ),
+                      curve: Curves.easeOutCubic,
+                      width: (isHovered && !isActive)
+                          ? (availableWidth - 24) * 0.3 - 6
+                          : 0,
+                      height: 100,
+                      margin: EdgeInsets.only(
+                        left: (isHovered && !isActive)
+                            ? 6
+                            : 0,
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(
+                          255,
+                          52,
+                          135,
+                          55,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          8,
+                        ),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius:
+                              BorderRadius.circular(8),
+                          onTap: () => _onProjectTap(
+                            project,
+                            isActive,
+                            currentTimer,
+                            projectCount,
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.play_arrow,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    width: FloatingWidgetConstants
-                        .activeIndicatorSize,
-                    height: FloatingWidgetConstants
-                        .activeIndicatorSize,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.successColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-
-                // Add task button
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isTaskEntryExpanded) {
-                        _expandedTaskEntryProjectId = null;
-                      } else {
-                        _expandedTaskEntryProjectId = project.id;
-                      }
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    child: Icon(
-                      isTaskEntryExpanded ? Icons.remove : Icons.add,
-                      size: 16,
-                      color: AppTheme.primaryColor,
-                    ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
 
         // Task chips and inline entry (only visible when expanded)
@@ -1065,16 +1160,21 @@ class _FloatingWidgetState
                           task: task,
                           isCompact: true,
                           onEdit: (newName) async {
-                            final updatedTask = task.copyWith(
-                              taskName: newName,
-                            );
+                            final updatedTask = task
+                                .copyWith(
+                                  taskName: newName,
+                                );
                             await ref
-                                .read(tasksProvider.notifier)
+                                .read(
+                                  tasksProvider.notifier,
+                                )
                                 .updateTask(updatedTask);
                           },
                           onDelete: () async {
                             await ref
-                                .read(tasksProvider.notifier)
+                                .read(
+                                  tasksProvider.notifier,
+                                )
                                 .deleteTask(task.id);
                           },
                         ),
@@ -1084,12 +1184,16 @@ class _FloatingWidgetState
                         projectId: project.id,
                         isCompact: true,
                         onSubmit: (taskName) async {
-                          await ref.read(tasksProvider.notifier).createTask(
+                          await ref
+                              .read(tasksProvider.notifier)
+                              .createTask(
                                 projectId: project.id,
                                 taskName: taskName,
                               );
                           if (mounted) {
-                            context.showSuccessSnackBar('Task added');
+                            context.showSuccessSnackBar(
+                              'Task added',
+                            );
                           }
                         },
                       ),
