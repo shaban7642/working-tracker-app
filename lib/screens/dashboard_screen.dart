@@ -169,6 +169,7 @@ class _DashboardScreenState
     final sessionTotalTime = ref.watch(
       sessionTotalTimeProvider,
     );
+    final activeTaskId = ref.watch(activeTaskIdProvider);
 
     // Handle navigation request from floating widget (only once)
     if (navigationRequest ==
@@ -541,9 +542,9 @@ class _DashboardScreenState
                                               color:
                                                   isActive
                                                   ? AppTheme
-                                                        .primaryColor
+                                                        .successColor
                                                         .withValues(
-                                                          alpha: 0.1,
+                                                          alpha: 0.15,
                                                         )
                                                   : AppTheme
                                                         .backgroundColor,
@@ -554,9 +555,9 @@ class _DashboardScreenState
                                               border:
                                                   isActive
                                                   ? Border.all(
-                                                      color: AppTheme.primaryColor.withValues(
+                                                      color: AppTheme.successColor.withValues(
                                                         alpha:
-                                                            0.3,
+                                                            0.4,
                                                       ),
                                                     )
                                                   : null,
@@ -613,7 +614,7 @@ class _DashboardScreenState
                                                           style: TextStyle(
                                                             fontSize: 13,
                                                             color: isActive
-                                                                ? AppTheme.primaryColor
+                                                                ? AppTheme.successColor
                                                                 : AppTheme.textPrimary,
                                                             fontWeight: isActive
                                                                 ? FontWeight.w600
@@ -773,63 +774,84 @@ class _DashboardScreenState
                                               left: 12,
                                               right: 12,
                                             ),
-                                        child: Column(
-                                          children: [
-                                            // Task chips
-                                            ...projectTasks.map(
-                                              (
-                                                task,
-                                              ) => TaskChip(
-                                                task: task,
-                                                onEdit: (newName) async {
-                                                  final updatedTask = task.copyWith(
-                                                    taskName:
-                                                        newName,
-                                                  );
-                                                  await ref
-                                                      .read(
-                                                        tasksProvider.notifier,
-                                                      )
-                                                      .updateTask(
-                                                        updatedTask,
-                                                      );
-                                                },
-                                                onDelete: () async {
-                                                  await ref
-                                                      .read(
-                                                        tasksProvider.notifier,
-                                                      )
-                                                      .deleteTask(
-                                                        task.id,
-                                                      );
-                                                },
-                                              ),
-                                            ),
-                                            // Inline task entry
-                                            InlineTaskEntry(
-                                              projectId:
-                                                  project
-                                                      .id,
-                                              onSubmit: (taskName) async {
-                                                await ref
-                                                    .read(
-                                                      tasksProvider
-                                                          .notifier,
-                                                    )
-                                                    .createTask(
-                                                      projectId:
-                                                          project.id,
-                                                      taskName:
-                                                          taskName,
+                                        child: Builder(
+                                          builder: (context) {
+                                            // Watch task-specific duration UNCONDITIONALLY to ensure proper subscription
+                                            final currentTaskDuration = ref.watch(currentTaskDurationProvider);
+                                            return Column(
+                                              children: [
+                                                // Task chips
+                                                ...projectTasks.asMap().entries.map(
+                                                  (entry) {
+                                                    final index = entry.key;
+                                                    final task = entry.value;
+                                                    final isTaskActive = activeTaskId == task.id;
+                                                    return TaskChip(
+                                                      task: task,
+                                                      index: index + 1,
+                                                      isActive: isTaskActive,
+                                                      currentDuration: isTaskActive ? currentTaskDuration : null,
+                                                      onActivate: () async {
+                                                        await ref
+                                                            .read(
+                                                              currentTimerProvider.notifier,
+                                                            )
+                                                            .startTimerWithTask(
+                                                              project,
+                                                              task.id,
+                                                            );
+                                                        if (mounted) {
+                                                          context.showSuccessSnackBar(
+                                                            'Started: ${task.taskName}',
+                                                          );
+                                                        }
+                                                      },
+                                                      onEdit: (newName) async {
+                                                        final updatedTask = task.copyWith(
+                                                          taskName: newName,
+                                                        );
+                                                        await ref
+                                                            .read(
+                                                              tasksProvider.notifier,
+                                                            )
+                                                            .updateTask(
+                                                              updatedTask,
+                                                            );
+                                                      },
+                                                      onDelete: () async {
+                                                        await ref
+                                                            .read(
+                                                              tasksProvider.notifier,
+                                                            )
+                                                            .deleteTask(
+                                                              task.id,
+                                                            );
+                                                      },
                                                     );
-                                                if (mounted) {
-                                                  context.showSuccessSnackBar(
-                                                    'Task added',
-                                                  );
-                                                }
-                                              },
-                                            ),
-                                          ],
+                                                  },
+                                                ),
+                                                // Inline task entry
+                                                InlineTaskEntry(
+                                                  projectId: project.id,
+                                                  onSubmit: (taskName) async {
+                                                    await ref
+                                                        .read(
+                                                          tasksProvider.notifier,
+                                                        )
+                                                        .createTask(
+                                                          projectId: project.id,
+                                                          taskName: taskName,
+                                                        );
+                                                    if (mounted) {
+                                                      context.showSuccessSnackBar(
+                                                        'Task added',
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         ),
                                       )
                                     : const SizedBox.shrink(),

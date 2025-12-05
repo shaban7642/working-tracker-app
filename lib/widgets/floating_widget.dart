@@ -69,6 +69,15 @@ class _FloatingWidgetState
   /// Debounce timer for collapse to prevent flickering
   Timer? _collapseTimer;
 
+  /// Drag start position for Y-axis only dragging
+  Offset? _dragStartPosition;
+
+  /// Window Y position at drag start
+  double? _dragStartWindowY;
+
+  /// Fixed X position for the widget (right edge of screen)
+  double? _fixedWindowX;
+
   // ============================================================================
   // LIFECYCLE METHODS
   // ============================================================================
@@ -443,14 +452,34 @@ class _FloatingWidgetState
   ) {
     return GestureDetector(
       // Allow vertical-only dragging while keeping window stuck to right edge
-      onPanStart: (_) async {
+      onPanStart: (details) async {
         if (!Platform.isWindows &&
             !Platform.isLinux &&
             !Platform.isMacOS) {
           return;
         }
-        // Start dragging - we'll constrain it to vertical in onPanUpdate
-        await windowManager.startDragging();
+        // Capture initial positions for Y-axis only dragging
+        final windowPos = await windowManager.getPosition();
+        _dragStartPosition = details.globalPosition;
+        _dragStartWindowY = windowPos.dy;
+        _fixedWindowX = windowPos.dx;
+      },
+      onPanUpdate: (details) {
+        if (_dragStartPosition == null ||
+            _dragStartWindowY == null ||
+            _fixedWindowX == null) {
+          return;
+        }
+        // Calculate only the Y delta
+        final deltaY = details.globalPosition.dy - _dragStartPosition!.dy;
+        final newY = _dragStartWindowY! + deltaY;
+        // Keep X fixed, only update Y (fire-and-forget for smooth movement)
+        windowManager.setPosition(Offset(_fixedWindowX!, newY));
+      },
+      onPanEnd: (_) {
+        // Clear drag state
+        _dragStartPosition = null;
+        _dragStartWindowY = null;
       },
       child: MouseRegion(
         onHover: (event) {
@@ -506,9 +535,8 @@ class _FloatingWidgetState
     dynamic currentTimer,
     Duration sessionTotalTime,
   ) {
-    return ClipRect(
-      child: Container(
-        decoration: BoxDecoration(
+    return Container(
+      decoration: BoxDecoration(
           color: AppTheme.surfaceColor,
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(
@@ -601,7 +629,6 @@ class _FloatingWidgetState
             ),
           ),
         ),
-      ),
     );
   }
 
@@ -951,8 +978,7 @@ class _FloatingWidgetState
                 child: Row(
                   crossAxisAlignment:
                       CrossAxisAlignment.stretch,
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceEvenly,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     // Project card - shrinks to 70% on hover (for non-active projects)
                     AnimatedContainer(
@@ -978,10 +1004,9 @@ class _FloatingWidgetState
                           });
                         },
 
-                        child: Expanded(
-                          child: Row(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.center,
+                        child: Row(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.center,
                             children: [
                               // Project icon
                               Icon(
@@ -1083,7 +1108,6 @@ class _FloatingWidgetState
                               ),
                             ],
                           ),
-                        ),
                       ),
                     ),
 
@@ -1096,7 +1120,6 @@ class _FloatingWidgetState
                       width: (isHovered && !isActive)
                           ? (availableWidth - 24) * 0.3 - 6
                           : 0,
-                      height: 100,
                       margin: EdgeInsets.only(
                         left: (isHovered && !isActive)
                             ? 6
@@ -1152,52 +1175,68 @@ class _FloatingWidgetState
                     left: 12,
                     right: 12,
                   ),
-                  child: Column(
-                    children: [
-                      // Task chips
-                      ...projectTasks.map(
-                        (task) => TaskChip(
-                          task: task,
-                          isCompact: true,
-                          onEdit: (newName) async {
-                            final updatedTask = task
-                                .copyWith(
-                                  taskName: newName,
-                                );
-                            await ref
-                                .read(
-                                  tasksProvider.notifier,
-                                )
-                                .updateTask(updatedTask);
-                          },
-                          onDelete: () async {
-                            await ref
-                                .read(
-                                  tasksProvider.notifier,
-                                )
-                                .deleteTask(task.id);
-                          },
-                        ),
-                      ),
-                      // Inline task entry
-                      InlineTaskEntry(
-                        projectId: project.id,
-                        isCompact: true,
-                        onSubmit: (taskName) async {
-                          await ref
-                              .read(tasksProvider.notifier)
-                              .createTask(
-                                projectId: project.id,
-                                taskName: taskName,
+                  child: Builder(
+                    builder: (context) {
+                      // Watch UNCONDITIONALLY to ensure proper subscription
+                      final activeTaskId = ref.watch(activeTaskIdProvider);
+                      final currentTaskDuration = ref.watch(currentTaskDurationProvider);
+                      return Column(
+                        children: [
+                          // Task chips
+                          ...projectTasks.asMap().entries.map(
+                            (entry) {
+                              final index = entry.key;
+                              final task = entry.value;
+                              final isTaskActive = activeTaskId == task.id;
+                              return TaskChip(
+                                task: task,
+                                index: index + 1,
+                                isCompact: true,
+                                isActive: isTaskActive,
+                                currentDuration: isTaskActive ? currentTaskDuration : null,
+                                onActivate: () async {
+                                  await ref
+                                      .read(currentTimerProvider.notifier)
+                                      .startTimerWithTask(project, task.id);
+                                  if (mounted) {
+                                    context.showSuccessSnackBar(
+                                      'Started: ${task.taskName}',
+                                    );
+                                  }
+                                },
+                                onEdit: (newName) async {
+                                  final updatedTask = task.copyWith(taskName: newName);
+                                  await ref
+                                      .read(tasksProvider.notifier)
+                                      .updateTask(updatedTask);
+                                },
+                                onDelete: () async {
+                                  await ref
+                                      .read(tasksProvider.notifier)
+                                      .deleteTask(task.id);
+                                },
                               );
-                          if (mounted) {
-                            context.showSuccessSnackBar(
-                              'Task added',
-                            );
-                          }
-                        },
-                      ),
-                    ],
+                            },
+                          ),
+                          // Inline task entry
+                          InlineTaskEntry(
+                            projectId: project.id,
+                            isCompact: true,
+                            onSubmit: (taskName) async {
+                              await ref
+                                  .read(tasksProvider.notifier)
+                                  .createTask(
+                                    projectId: project.id,
+                                    taskName: taskName,
+                                  );
+                              if (mounted) {
+                                context.showSuccessSnackBar('Task added');
+                              }
+                            },
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 )
               : const SizedBox.shrink(),

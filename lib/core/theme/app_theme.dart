@@ -12,9 +12,9 @@ class AppTheme {
   );
   static const Color successColor = Color.fromARGB(
     255,
-    141,
-    255,
-    145,
+    52,
+    135,
+    55,
   );
   static const Color warningColor = Color.fromARGB(
     255,

@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
+import '../core/utils/date_time_utils.dart';
 import '../models/task.dart';
 
 class TaskChip extends StatefulWidget {
   final Task task;
+  final int index;
   final bool isCompact;
   final Function(String newName)? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onActivate;
+  final bool isActive;
+  final Duration? currentDuration;
 
   const TaskChip({
     super.key,
     required this.task,
+    required this.index,
     this.isCompact = false,
     this.onEdit,
     this.onDelete,
+    this.onActivate,
+    this.isActive = false,
+    this.currentDuration,
   });
 
   @override
@@ -22,6 +31,7 @@ class TaskChip extends StatefulWidget {
 
 class _TaskChipState extends State<TaskChip> {
   bool _isEditing = false;
+  bool _isHovered = false;
   late TextEditingController _controller;
   late FocusNode _focusNode;
 
@@ -68,6 +78,13 @@ class _TaskChipState extends State<TaskChip> {
     setState(() {
       _isEditing = false;
     });
+  }
+
+  // Calculate the total duration to display (saved + current if active)
+  Duration get _displayDuration {
+    final saved = widget.task.totalDuration;
+    final current = widget.currentDuration ?? Duration.zero;
+    return saved + current;
   }
 
   @override
@@ -156,69 +173,178 @@ class _TaskChipState extends State<TaskChip> {
       );
     }
 
-    return Container(
-      height: height,
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: EdgeInsets.only(
-        left: horizontalPadding,
-        right: 4,
-      ),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: AppTheme.primaryColor.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.check_circle_outline,
-            size: iconSize,
-            color: AppTheme.primaryColor.withValues(alpha: 0.6),
-          ),
-          SizedBox(width: widget.isCompact ? 6 : 8),
-          Expanded(
-            child: Text(
-              widget.task.taskName,
-              style: TextStyle(
-                fontSize: fontSize,
-                color: AppTheme.textPrimary,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // Edit button
-          if (widget.onEdit != null)
-            InkWell(
-              onTap: _startEditing,
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.edit_outlined,
-                  size: iconSize,
-                  color: AppTheme.textSecondary,
+    // Calculate widths for hover animation
+    // Don't animate when active
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalWidth = constraints.maxWidth;
+        final activateButtonWidth = widget.isCompact ? 60.0 : 70.0;
+        // Don't shrink when active
+        final shouldAnimate = _isHovered && !widget.isActive;
+        final chipWidth = shouldAnimate ? totalWidth * 0.7 : totalWidth;
+        final buttonVisibleWidth = shouldAnimate ? activateButtonWidth : 0.0;
+
+        return MouseRegion(
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() => _isHovered = false),
+          child: SizedBox(
+            height: height,
+            child: Row(
+              children: [
+                // Task chip with animation
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  width: chipWidth,
+                  height: height,
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: EdgeInsets.only(
+                    left: horizontalPadding,
+                    right: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.isActive
+                        ? AppTheme.successColor.withValues(alpha: 0.15)
+                        : AppTheme.backgroundColor,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: widget.isActive
+                          ? AppTheme.successColor.withValues(alpha: 0.4)
+                          : AppTheme.borderColor,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Green indicator dot when active (on the left)
+                      if (widget.isActive)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.successColor,
+                            shape: BoxShape.circle,
+                          ),
+                        )
+                      else
+                        Text(
+                          '${widget.index}-',
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      if (!widget.isActive) SizedBox(width: widget.isCompact ? 6 : 8),
+                      // Task name
+                      Expanded(
+                        child: Text(
+                          widget.task.taskName,
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            color: widget.isActive
+                                ? AppTheme.successColor
+                                : AppTheme.textPrimary,
+                            fontWeight: widget.isActive
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Timer display - always show for all tasks
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          DateTimeUtils.formatDuration(_displayDuration),
+                          style: TextStyle(
+                            fontSize: widget.isCompact ? 10.0 : 11.0,
+                            color: widget.isActive
+                                ? AppTheme.successColor
+                                : AppTheme.textSecondary,
+                            fontWeight: widget.isActive
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                      // Edit button (hide when active to save space)
+                      if (widget.onEdit != null && !widget.isActive)
+                        InkWell(
+                          onTap: _startEditing,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.edit_outlined,
+                              size: iconSize,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                      // Delete button (hide when active to save space)
+                      if (widget.onDelete != null && !widget.isActive)
+                        InkWell(
+                          onTap: widget.onDelete,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close,
+                              size: iconSize,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                // Activate button (slides in from right) - only show when not active
+                if (widget.onActivate != null && !widget.isActive)
+                  ClipRect(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      width: buttonVisibleWidth,
+                      height: height - 4, // Account for margin
+                      child: OverflowBox(
+                        maxWidth: activateButtonWidth,
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: InkWell(
+                            onTap: widget.onActivate,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              width: activateButtonWidth - 6,
+                              height: height - 4,
+                              decoration: BoxDecoration(
+                                color: AppTheme.successColor,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Start',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: widget.isCompact ? 10.0 : 11.0,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          // Delete button
-          if (widget.onDelete != null)
-            InkWell(
-              onTap: widget.onDelete,
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.close,
-                  size: iconSize,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ),
-        ],
-      ),
+          ),
+        );
+      },
     );
   }
 }

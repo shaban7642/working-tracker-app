@@ -16,11 +16,15 @@ class Task extends HiveObject {
   @HiveField(3)
   final DateTime createdAt;
 
+  @HiveField(4)
+  final Duration totalDuration;
+
   Task({
     required this.id,
     required this.projectId,
     required this.taskName,
     required this.createdAt,
+    this.totalDuration = Duration.zero,
   });
 
   Task copyWith({
@@ -28,12 +32,14 @@ class Task extends HiveObject {
     String? projectId,
     String? taskName,
     DateTime? createdAt,
+    Duration? totalDuration,
   }) {
     return Task(
       id: id ?? this.id,
       projectId: projectId ?? this.projectId,
       taskName: taskName ?? this.taskName,
       createdAt: createdAt ?? this.createdAt,
+      totalDuration: totalDuration ?? this.totalDuration,
     );
   }
 
@@ -43,6 +49,7 @@ class Task extends HiveObject {
       'projectId': projectId,
       'taskName': taskName,
       'createdAt': createdAt.toIso8601String(),
+      'totalDuration': totalDuration.inSeconds,
     };
   }
 
@@ -52,6 +59,7 @@ class Task extends HiveObject {
       projectId: json['projectId'] as String,
       taskName: json['taskName'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      totalDuration: Duration(seconds: json['totalDuration'] as int? ?? 0),
     );
   }
 

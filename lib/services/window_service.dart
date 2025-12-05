@@ -242,10 +242,14 @@ class WindowService {
         _logger.warning('Could not restore title bar: $e');
       }
 
-      // Set window size for dashboard
+      // Set window size for dashboard with height-only resizing
       await windowManager.setMinimumSize(
-        const Size(380, 580),
+        const Size(380, 400),
       );
+      await windowManager.setMaximumSize(
+        const Size(380, 1200),
+      );
+      await windowManager.setResizable(true);
       await windowManager.setSize(const Size(380, 580));
       await windowManager.center();
 

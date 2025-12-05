@@ -80,6 +80,39 @@ class TasksNotifier extends StateNotifier<AsyncValue<List<Task>>> {
     }
   }
 
+  /// Add duration to a task's total time
+  Future<void> addDuration(String taskId, Duration elapsed) async {
+    try {
+      final tasks = state.valueOrNull ?? [];
+      final taskIndex = tasks.indexWhere((t) => t.id == taskId);
+      if (taskIndex == -1) {
+        _logger.warning('Task not found for duration update: $taskId');
+        return;
+      }
+
+      final task = tasks[taskIndex];
+      final updatedTask = task.copyWith(
+        totalDuration: task.totalDuration + elapsed,
+      );
+
+      await _taskService.updateTask(updatedTask);
+
+      state = state.whenData((tasks) {
+        final updatedTasks = List<Task>.from(tasks);
+        updatedTasks[taskIndex] = updatedTask;
+        return updatedTasks;
+      });
+
+      _logger.info(
+        'Added ${elapsed.inSeconds}s to task ${task.taskName}, '
+        'total: ${updatedTask.totalDuration.inSeconds}s',
+      );
+    } catch (e, stackTrace) {
+      _logger.error('Failed to add duration to task', e, stackTrace);
+      rethrow;
+    }
+  }
+
   /// Delete a task
   Future<void> deleteTask(String id) async {
     try {

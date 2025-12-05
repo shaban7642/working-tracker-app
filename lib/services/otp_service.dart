@@ -3,7 +3,8 @@ import 'package:logger/logger.dart';
 
 /// Service for managing OTP (One-Time Password) generation, verification, and rate limiting
 class OTPService {
-  static final OTPService _instance = OTPService._internal();
+  static final OTPService _instance =
+      OTPService._internal();
   factory OTPService() => _instance;
   OTPService._internal();
 
@@ -16,7 +17,7 @@ class OTPService {
   final Map<String, List<DateTime>> _rateLimitStorage = {};
 
   // Configuration constants
-  static const int _otpLength = 6;
+
   static const int _otpExpirationMinutes = 5;
   static const int _resendCooldownSeconds = 60;
   static const int _maxRequestsPerWindow = 3;
@@ -30,7 +31,8 @@ class OTPService {
 
     // Check rate limiting
     if (!_checkRateLimit(email)) {
-      final remainingMinutes = _getRateLimitRemainingMinutes(email);
+      final remainingMinutes =
+          _getRateLimitRemainingMinutes(email);
       throw OTPException(
         'Too many OTP requests. Please try again in $remainingMinutes minutes.',
       );
@@ -38,7 +40,8 @@ class OTPService {
 
     // Generate random 6-digit code
     final random = Random.secure();
-    final code = (random.nextInt(900000) + 100000).toString();
+    final code = (random.nextInt(900000) + 100000)
+        .toString();
 
     // Store OTP with timestamp
     _otpStorage[email] = _OTPData(
@@ -50,7 +53,9 @@ class OTPService {
     // Record request for rate limiting
     _recordRequest(email);
 
-    _logger.i('OTP generated for $email (expires in $_otpExpirationMinutes minutes)');
+    _logger.i(
+      'OTP generated for $email (expires in $_otpExpirationMinutes minutes)',
+    );
 
     // Clean up expired OTPs
     _cleanupExpiredOTPs();
@@ -68,15 +73,21 @@ class OTPService {
     final otpData = _otpStorage[email];
 
     if (otpData == null) {
-      _logger.w('OTP verification failed: No OTP found for $email');
+      _logger.w(
+        'OTP verification failed: No OTP found for $email',
+      );
       return false;
     }
 
     // Check if OTP has expired
     if (_isExpired(otpData.generatedAt)) {
-      _logger.w('OTP verification failed: OTP expired for $email');
+      _logger.w(
+        'OTP verification failed: OTP expired for $email',
+      );
       _clearOTP(email);
-      throw OTPException('OTP has expired. Please request a new code.');
+      throw OTPException(
+        'OTP has expired. Please request a new code.',
+      );
     }
 
     // Increment attempt counter
@@ -89,13 +100,19 @@ class OTPService {
       return true;
     }
 
-    _logger.w('OTP verification failed: Invalid code for $email (attempt ${otpData.attempts})');
+    _logger.w(
+      'OTP verification failed: Invalid code for $email (attempt ${otpData.attempts})',
+    );
 
     // Clear OTP after 5 failed attempts
     if (otpData.attempts >= 5) {
-      _logger.w('OTP cleared due to too many failed attempts for $email');
+      _logger.w(
+        'OTP cleared due to too many failed attempts for $email',
+      );
       _clearOTP(email);
-      throw OTPException('Too many failed attempts. Please request a new code.');
+      throw OTPException(
+        'Too many failed attempts. Please request a new code.',
+      );
     }
 
     return false;
@@ -128,7 +145,9 @@ class OTPService {
       return true; // No existing OTP, can send
     }
 
-    final secondsSinceGeneration = DateTime.now().difference(otpData.generatedAt).inSeconds;
+    final secondsSinceGeneration = DateTime.now()
+        .difference(otpData.generatedAt)
+        .inSeconds;
     return secondsSinceGeneration >= _resendCooldownSeconds;
   }
 
@@ -142,8 +161,11 @@ class OTPService {
       return 0;
     }
 
-    final secondsSinceGeneration = DateTime.now().difference(otpData.generatedAt).inSeconds;
-    final remaining = _resendCooldownSeconds - secondsSinceGeneration;
+    final secondsSinceGeneration = DateTime.now()
+        .difference(otpData.generatedAt)
+        .inSeconds;
+    final remaining =
+        _resendCooldownSeconds - secondsSinceGeneration;
 
     return remaining > 0 ? remaining : 0;
   }
@@ -158,9 +180,12 @@ class OTPService {
       return 0;
     }
 
-    final secondsSinceGeneration = DateTime.now().difference(otpData.generatedAt).inSeconds;
+    final secondsSinceGeneration = DateTime.now()
+        .difference(otpData.generatedAt)
+        .inSeconds;
     final expirationSeconds = _otpExpirationMinutes * 60;
-    final remaining = expirationSeconds - secondsSinceGeneration;
+    final remaining =
+        expirationSeconds - secondsSinceGeneration;
 
     return remaining > 0 ? remaining : 0;
   }
@@ -187,10 +212,16 @@ class OTPService {
     }
 
     final now = DateTime.now();
-    final windowStart = now.subtract(Duration(minutes: _rateLimitWindowMinutes));
+    final windowStart = now.subtract(
+      Duration(minutes: _rateLimitWindowMinutes),
+    );
 
     // Count requests within the time window
-    final recentRequests = requests.where((timestamp) => timestamp.isAfter(windowStart)).toList();
+    final recentRequests = requests
+        .where(
+          (timestamp) => timestamp.isAfter(windowStart),
+        )
+        .toList();
 
     return recentRequests.length < _maxRequestsPerWindow;
   }
@@ -206,8 +237,12 @@ class OTPService {
     _rateLimitStorage[email]!.add(now);
 
     // Clean up old requests outside the window
-    final windowStart = now.subtract(Duration(minutes: _rateLimitWindowMinutes));
-    _rateLimitStorage[email]!.removeWhere((timestamp) => timestamp.isBefore(windowStart));
+    final windowStart = now.subtract(
+      Duration(minutes: _rateLimitWindowMinutes),
+    );
+    _rateLimitStorage[email]!.removeWhere(
+      (timestamp) => timestamp.isBefore(windowStart),
+    );
   }
 
   /// Returns remaining minutes until rate limit resets
@@ -220,15 +255,17 @@ class OTPService {
 
     final now = DateTime.now();
     final oldestRequest = requests.first;
-    final minutesSinceOldest = now.difference(oldestRequest).inMinutes;
-    final remaining = _rateLimitWindowMinutes - minutesSinceOldest;
+    final minutesSinceOldest = now
+        .difference(oldestRequest)
+        .inMinutes;
+    final remaining =
+        _rateLimitWindowMinutes - minutesSinceOldest;
 
     return remaining > 0 ? remaining : 0;
   }
 
   /// Cleans up expired OTPs from storage
   void _cleanupExpiredOTPs() {
-    final now = DateTime.now();
     final expiredEmails = <String>[];
 
     _otpStorage.forEach((email, otpData) {
@@ -242,7 +279,9 @@ class OTPService {
     }
 
     if (expiredEmails.isNotEmpty) {
-      _logger.d('Cleaned up ${expiredEmails.length} expired OTPs');
+      _logger.d(
+        'Cleaned up ${expiredEmails.length} expired OTPs',
+      );
     }
   }
 

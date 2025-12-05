@@ -12,6 +12,7 @@ import '../models/project.dart';
 import '../models/task_submission.dart';
 import '../providers/auth_provider.dart';
 import '../providers/task_provider.dart';
+import '../providers/timer_provider.dart';
 import '../services/report_submission_service.dart';
 import '../services/window_service.dart';
 import '../widgets/gradient_button.dart';
@@ -72,6 +73,7 @@ class _SubmissionFormScreenState
                 ),
                 taskDescController: TextEditingController(),
                 attachments: [],
+                duration: task.totalDuration,
               ),
             )
             .toList();
@@ -361,6 +363,32 @@ class _SubmissionFormScreenState
     });
 
     try {
+      // Save current running task's duration before submission
+      await ref.read(currentTimerProvider.notifier).saveCurrentTaskDuration();
+
+      // Update form data with latest task durations from provider
+      for (var project in widget.projects.where((p) => p.totalTime.inSeconds > 0)) {
+        final freshTasks = ref.read(projectTasksProvider(project.id));
+        final formTasks = _projectTasks[project.id] ?? [];
+
+        for (int i = 0; i < formTasks.length && i < freshTasks.length; i++) {
+          // Match by task name to update duration
+          final formTask = formTasks[i];
+          final matchingTask = freshTasks.firstWhere(
+            (t) => t.taskName == formTask.taskNameController.text,
+            orElse: () => freshTasks[i],
+          );
+          // Update the duration in form data
+          _projectTasks[project.id]![i] = TaskFormData(
+            taskNameController: formTask.taskNameController,
+            taskDescController: formTask.taskDescController,
+            attachments: formTask.attachments,
+            duration: matchingTask.totalDuration,
+            isDragging: formTask.isDragging,
+          );
+        }
+      }
+
       final user = ref.read(currentUserProvider);
       if (user == null) {
         throw Exception('User not logged in');
@@ -719,7 +747,7 @@ class _SubmissionFormScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Task header with delete button
+          // Task header with duration and delete button
           Row(
             children: [
               Text(
@@ -728,6 +756,16 @@ class _SubmissionFormScreenState
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                DateTimeUtils.formatDuration(taskData.duration),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.primaryColor,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const Spacer(),
@@ -1165,12 +1203,14 @@ class TaskFormData {
   final TextEditingController taskNameController;
   final TextEditingController taskDescController;
   final List<String> attachments;
+  final Duration duration;
   bool isDragging;
 
   TaskFormData({
     required this.taskNameController,
     required this.taskDescController,
     required this.attachments,
+    this.duration = Duration.zero,
     this.isDragging = false,
   });
 }
