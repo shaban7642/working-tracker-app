@@ -41,6 +41,22 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
+  // Login with email and password
+  Future<User> login(String email, String password) async {
+    try {
+      final user = await _authService.loginWithEmailPassword(email, password);
+      state = user;
+      _logger.info('User logged in: ${user.email}');
+      return user;
+    } catch (e, stackTrace) {
+      _logger.error('Login failed in provider', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /*
+  // ============ OTP-based authentication (commented out) ============
+
   // Send OTP to email
   Future<bool> sendOTP(String email) async {
     try {
@@ -65,6 +81,9 @@ class CurrentUserNotifier extends StateNotifier<User?> {
       rethrow;
     }
   }
+
+  // ============ End OTP-based authentication ============
+  */
 
   // Logout
   Future<void> logout() async {

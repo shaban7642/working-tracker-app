@@ -21,7 +21,7 @@ class TaskAdapter extends TypeAdapter<Task> {
       projectId: fields[1] as String,
       taskName: fields[2] as String,
       createdAt: fields[3] as DateTime,
-      totalDuration: fields[4] as Duration? ?? Duration.zero,
+      totalDuration: fields[4] as Duration,
     );
   }
 

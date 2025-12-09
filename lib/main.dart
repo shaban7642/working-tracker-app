@@ -8,11 +8,12 @@ import 'core/theme/app_theme.dart';
 import 'services/storage_service.dart';
 import 'services/timer_service.dart';
 import 'services/logger_service.dart';
-import 'services/email_service.dart';
+// Email service not needed for API login
+// import 'services/email_service.dart';
 import 'services/auth_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/window_provider.dart';
-import 'screens/email_entry_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'widgets/floating_widget.dart';
 
@@ -75,10 +76,10 @@ void main() async {
     await timerService.initialize();
     logger.info('Timer service initialized');
 
-    // Initialize email service
-    final emailService = EmailService();
-    emailService.initialize();
-    logger.info('Email service initialized');
+    // Email service not needed for API login
+    // final emailService = EmailService();
+    // emailService.initialize();
+    // logger.info('Email service initialized');
 
     // Run app
     runApp(const ProviderScope(child: MyApp()));
@@ -113,7 +114,7 @@ class MyApp extends ConsumerWidget {
           ? const FloatingWidget()
           : (isLoggedIn
                 ? const DashboardScreen()
-                : const EmailEntryScreen()),
+                : const LoginScreen()),
     );
   }
 }

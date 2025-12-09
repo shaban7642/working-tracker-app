@@ -84,9 +84,11 @@ class Project extends HiveObject {
   }
 
   // Create from JSON (for API integration)
+  // Supports both old API format and new API format
   factory Project.fromJson(Map<String, dynamic> json) {
     // Handle different possible field names from API
-    final id = (json['id'] ?? json['project_id'] ?? json['ProjectID'] ?? '').toString();
+    // New API uses _id, old API uses id/project_id/ProjectID
+    final id = (json['_id'] ?? json['id'] ?? json['project_id'] ?? json['ProjectID'] ?? '').toString();
     final name = (json['name'] ?? json['project_name'] ?? json['ProjectName'] ?? 'Unnamed Project') as String;
 
     // Parse dates safely
@@ -143,11 +145,27 @@ class Project extends HiveObject {
       parsedLastActiveAt = null;
     }
 
+    // Get client from new API format (createdBy user) or old format
+    String? client = json['client'] as String?;
+    if (client == null && json['createdBy'] != null && json['createdBy'] is Map) {
+      final createdBy = json['createdBy'] as Map<String, dynamic>;
+      final firstName = createdBy['firstName'] as String? ?? '';
+      final lastName = createdBy['lastName'] as String? ?? '';
+      client = '$firstName $lastName'.trim();
+      if (client.isEmpty) client = null;
+    }
+
+    // Get district as description if no description provided (new API format)
+    String? description = json['description'] as String?;
+    if (description == null && json['district'] != null) {
+      description = 'District: ${json['district']}';
+    }
+
     return Project(
       id: id,
       name: name,
-      description: json['description'] as String?,
-      client: json['client'] as String?,
+      description: description,
+      client: client,
       createdAt: parsedCreatedAt ?? DateTime.now(),
       deadline: parsedDeadline,
       status: json['status'] as String? ?? 'active',

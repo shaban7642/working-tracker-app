@@ -16,7 +16,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/window_controls.dart';
 import '../widgets/inline_task_entry.dart';
 import '../widgets/task_chip.dart';
-import 'email_entry_screen.dart';
+import 'login_screen.dart';
 import 'submission_form_screen.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -125,7 +125,7 @@ class _DashboardScreenState
     if (confirmed == true) {
       await ref.read(currentUserProvider.notifier).logout();
       if (mounted) {
-        context.pushReplacement(const EmailEntryScreen());
+        context.pushReplacement(const LoginScreen());
       }
     }
   }

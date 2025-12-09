@@ -1,20 +1,72 @@
-import 'dart:math';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import 'storage_service.dart';
 import 'logger_service.dart';
-import 'otp_service.dart';
-import 'email_service.dart';
+// OTP-based auth commented out - now using API login
+// import 'otp_service.dart';
+// import 'email_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
 
+  static const String _baseUrl = 'https://intercompany-superindulgently-lesha.ngrok-free.dev/api/v1';
+
   final _storage = StorageService();
   final _logger = LoggerService();
-  final _otpService = OTPService();
-  final _emailService = EmailService();
+  // OTP-based auth commented out - now using API login
+  // final _otpService = OTPService();
+  // final _emailService = EmailService();
 
   AuthService._internal();
+
+  /// Login with email and password via API
+  /// Returns User object on success, throws on failure
+  Future<User> loginWithEmailPassword(String email, String password) async {
+    try {
+      _logger.info('Logging in with email: $email');
+
+      // Validate email format
+      if (email.isEmpty || !_isValidEmail(email)) {
+        throw Exception('Please enter a valid email address');
+      }
+
+      if (password.isEmpty || password.length < 6) {
+        throw Exception('Password must be at least 6 characters');
+      }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/auth/login'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200 && responseData['success'] == true) {
+        final user = User.fromLoginResponse(responseData);
+        await _storage.saveUser(user);
+        _logger.info('Login successful for: $email');
+        return user;
+      } else {
+        final message = responseData['message'] ?? 'Login failed';
+        _logger.info('Login failed for $email: $message');
+        throw Exception(message);
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Login failed', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /*
+  // ============ OTP-based authentication (commented out) ============
 
   /// Sends OTP code to the user's email
   /// Returns true if email was sent successfully
@@ -76,12 +128,6 @@ class AuthService {
     }
   }
 
-  /// Validates email format
-  bool _isValidEmail(String email) {
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    return emailRegex.hasMatch(email);
-  }
-
   /// Generates a secure random token
   String _generateSecureToken() {
     final random = Random.secure();
@@ -89,10 +135,49 @@ class AuthService {
     return values.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 
-  // Logout
+  // ============ End OTP-based authentication ============
+  */
+
+  /// Validates email format
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    return emailRegex.hasMatch(email);
+  }
+
+  // Logout via API
   Future<void> logout() async {
     try {
       _logger.info('Logging out user');
+
+      // Get current user for tokens
+      final currentUser = _storage.getCurrentUser();
+
+      if (currentUser != null && currentUser.refreshToken != null && currentUser.token != null) {
+        try {
+          // Call logout API
+          final response = await http.post(
+            Uri.parse('$_baseUrl/auth/logout'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${currentUser.token}',
+            },
+            body: jsonEncode({
+              'refreshToken': currentUser.refreshToken,
+            }),
+          );
+
+          if (response.statusCode == 200) {
+            _logger.info('API logout successful');
+          } else {
+            _logger.warning('API logout returned status ${response.statusCode}, clearing local data anyway');
+          }
+        } catch (e) {
+          // If API call fails, still clear local data
+          _logger.warning('API logout failed, clearing local data: $e');
+        }
+      }
+
+      // Always clear local user data
       await _storage.clearUser();
       _logger.info('Logout successful');
     } catch (e, stackTrace) {

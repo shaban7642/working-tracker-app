@@ -1,3 +1,8 @@
+// ============ OTP verification screen (commented out) ============
+// This screen is no longer used. Authentication now uses email/password via LoginScreen.
+// Keeping this file for reference.
+
+/*
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -474,3 +479,4 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
     );
   }
 }
+*/

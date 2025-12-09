@@ -1,3 +1,8 @@
+// ============ OTP-based authentication screen (commented out) ============
+// This screen is no longer used. Authentication now uses email/password via LoginScreen.
+// Keeping this file for reference.
+
+/*
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
@@ -217,3 +222,4 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
     );
   }
 }
+*/
