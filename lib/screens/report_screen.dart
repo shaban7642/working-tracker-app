@@ -4,7 +4,6 @@ import '../core/extensions/context_extensions.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
 import '../providers/timer_provider.dart';
-import '../providers/project_provider.dart';
 
 class ReportScreen extends ConsumerStatefulWidget {
   const ReportScreen({super.key});

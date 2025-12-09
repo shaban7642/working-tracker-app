@@ -7,7 +7,6 @@ import '../core/extensions/context_extensions.dart';
 import '../core/theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../services/otp_service.dart';
-import '../services/email_service.dart';
 import '../services/window_service.dart';
 import '../screens/dashboard_screen.dart';
 import '../widgets/gradient_button.dart';
