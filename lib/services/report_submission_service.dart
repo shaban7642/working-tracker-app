@@ -20,7 +20,7 @@ class ReportSubmissionService {
   static const String _oldAuthToken = 'e985666576fc298350682a2f2f1a8093d022d740aa96f0a9b72785a134cc2c95';
 
   // New API Configuration
-  static const String _newApiUrl = 'https://intercompany-superindulgently-lesha.ngrok-free.dev/api/v1/reports/daily-reports';
+  static const String _newApiUrl = 'https://api.ssapp.site/api/v1/reports/daily-reports';
 
   ReportSubmissionService._internal();
 

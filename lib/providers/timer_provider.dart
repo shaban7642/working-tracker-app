@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/time_entry.dart';
+import '../models/time_entry_event.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
 import '../services/timer_service.dart';
 import '../services/logger_service.dart';
+import '../services/socket_service.dart';
 import 'auth_provider.dart';
 import 'project_provider.dart';
 import 'task_provider.dart';
@@ -24,8 +26,9 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
   late final TimerService _timerService;
   late final LoggerService _logger;
   final _api = ApiService();
+  final _socketService = SocketService();
   StreamSubscription<Duration>? _timerSubscription;
-  Timer? _openEntrySyncTimer;
+  StreamSubscription<TimeEntryEvent>? _socketSubscription;
   DateTime? _taskStartTime; // Track when current task started
 
   // Expose task start time for calculating task-specific duration
@@ -62,8 +65,8 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  /// Check for open entry from API and sync local state
-  /// Call this on login and it will auto-poll every 1 minute
+  /// Check for open entry from API and sync local state (one-time call on login)
+  /// Also starts listening to socket events for real-time updates
   Future<void> checkAndSyncOpenEntry() async {
     try {
       _logger.info('Checking for open entry from server...');
@@ -108,68 +111,66 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
         }
       }
 
-      // Start the 1-minute polling timer (restart if already running)
-      _startOpenEntrySyncTimer();
+      // Start listening to socket events for real-time updates
+      _startSocketEventListener();
     } catch (e, stackTrace) {
       _logger.error('Failed to sync open entry', e, stackTrace);
     }
   }
 
-  /// Start periodic timer to check for open entry every 10 seconds
-  void _startOpenEntrySyncTimer() {
-    _openEntrySyncTimer?.cancel();
-    _openEntrySyncTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      await _checkOpenEntryQuietly();
-    });
-    _logger.info('Open entry sync timer started (10 sec interval)');
+  /// Start listening to socket events for real-time time entry updates
+  void _startSocketEventListener() {
+    _socketSubscription?.cancel();
+    _socketSubscription = _socketService.eventStream.listen(
+      _handleSocketEvent,
+      onError: (error) {
+        _logger.error('Socket event stream error', error, null);
+      },
+    );
+    _logger.info('Socket event listener started');
   }
 
-  /// Quietly check for open entry (used by periodic timer)
-  Future<void> _checkOpenEntryQuietly() async {
+  /// Handle incoming socket events for time entry changes
+  Future<void> _handleSocketEvent(TimeEntryEvent event) async {
     try {
-      final openEntry = await _api.getOpenEntry();
+      _logger.info('Handling socket event: ${event.type} for project: ${event.projectName}');
 
-      if (openEntry != null) {
-        // API returns 'project' field - can be string ID or nested object {_id, name, ...}
-        String? projectId;
-        final projectField = openEntry['project'];
-        if (projectField is Map) {
-          projectId = projectField['_id']?.toString();
-        } else {
-          projectId = projectField?.toString();
-        }
+      if (event.type == TimeEntryEventType.started) {
+        // Time entry started - select the project locally
+        final projects = _ref.read(projectsProvider).valueOrNull ?? [];
+        final project = projects.cast<Project?>().firstWhere(
+          (p) => p?.id == event.projectId,
+          orElse: () => null,
+        );
 
-        if (projectId != null && (state == null || state!.projectId != projectId)) {
-          // Project changed on server - sync it
-          final projects = _ref.read(projectsProvider).valueOrNull ?? [];
-          final project = projects.cast<Project?>().firstWhere(
-            (p) => p?.id == projectId,
-            orElse: () => null,
-          );
-
-          if (project != null) {
-            _logger.info('Open entry changed on server - selecting: ${project.name}');
-            // Use local selection since timer is already running on server
+        if (project != null) {
+          // Only update if different from current state
+          if (state == null || state!.projectId != event.projectId) {
+            _logger.info('Socket: Time started for project: ${project.name}');
             await _selectProjectLocally(project);
           }
+        } else {
+          _logger.warning('Socket: Project not found locally: ${event.projectId}');
         }
-      } else {
-        // No open entry on server - unselect project locally
-        if (state != null) {
-          _logger.info('No open entry on server (polling) - unselecting project');
+      } else if (event.type == TimeEntryEventType.ended) {
+        // Time entry ended - check if it's our current project
+        if (state != null && state!.projectId == event.projectId) {
+          _logger.info('Socket: Time ended for current project: ${event.projectName}');
           await _unselectProjectLocally();
+          // Refresh projects to update total time
+          await _ref.read(projectsProvider.notifier).refreshProjects();
         }
       }
-    } catch (e) {
-      // Silently ignore errors during background sync
+    } catch (e, stackTrace) {
+      _logger.error('Failed to handle socket event', e, stackTrace);
     }
   }
 
-  /// Stop the open entry sync timer
-  void stopOpenEntrySyncTimer() {
-    _openEntrySyncTimer?.cancel();
-    _openEntrySyncTimer = null;
-    _logger.info('Open entry sync timer stopped');
+  /// Stop listening to socket events
+  void stopSocketEventListener() {
+    _socketSubscription?.cancel();
+    _socketSubscription = null;
+    _logger.info('Socket event listener stopped');
   }
 
   // Start timer for project (calls API)
@@ -387,7 +388,7 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
   @override
   void dispose() {
     _timerSubscription?.cancel();
-    _openEntrySyncTimer?.cancel();
+    _socketSubscription?.cancel();
     super.dispose();
   }
 }

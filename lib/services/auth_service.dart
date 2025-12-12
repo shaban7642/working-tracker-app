@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import 'storage_service.dart';
 import 'logger_service.dart';
+import 'socket_service.dart';
 // OTP-based auth commented out - now using API login
 // import 'otp_service.dart';
 // import 'email_service.dart';
@@ -11,10 +12,11 @@ class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
 
-  static const String _baseUrl = 'https://intercompany-superindulgently-lesha.ngrok-free.dev/api/v1';
+  static const String _baseUrl = 'https://api.ssapp.site/api/v1';
 
   final _storage = StorageService();
   final _logger = LoggerService();
+  final _socketService = SocketService();
   // OTP-based auth commented out - now using API login
   // final _otpService = OTPService();
   // final _emailService = EmailService();
@@ -53,6 +55,16 @@ class AuthService {
         final user = User.fromLoginResponse(responseData);
         await _storage.saveUser(user);
         _logger.info('Login successful for: $email');
+
+        // Connect to Socket.IO for real-time updates
+        try {
+          await _socketService.connect();
+          _logger.info('Socket.IO connected after login');
+        } catch (e) {
+          _logger.warning('Failed to connect Socket.IO after login: $e');
+          // Don't fail login if socket connection fails
+        }
+
         return user;
       } else {
         final message = responseData['message'] ?? 'Login failed';
@@ -148,6 +160,10 @@ class AuthService {
   Future<void> logout() async {
     try {
       _logger.info('Logging out user');
+
+      // Disconnect Socket.IO first
+      _socketService.disconnect();
+      _logger.info('Socket.IO disconnected on logout');
 
       // Get current user for tokens
       final currentUser = _storage.getCurrentUser();

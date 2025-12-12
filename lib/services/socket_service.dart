@@ -1,0 +1,193 @@
+import 'dart:async';
+import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../models/time_entry_event.dart';
+import 'logger_service.dart';
+import 'storage_service.dart';
+
+/// Service for managing Socket.IO connection for real-time time entry updates
+class SocketService {
+  static final SocketService _instance = SocketService._internal();
+  factory SocketService() => _instance;
+
+  final _logger = LoggerService();
+  final _storage = StorageService();
+
+  // Socket.IO server URL (same as API base, without /api/v1)
+  static const String _socketUrl = 'https://api.ssapp.site';
+
+  io.Socket? _socket;
+  bool _isConnected = false;
+  bool _isConnecting = false;
+
+  // Stream controller for broadcasting time entry events
+  final _eventController = StreamController<TimeEntryEvent>.broadcast();
+
+  SocketService._internal();
+
+  /// Stream of time entry events for providers to listen to
+  Stream<TimeEntryEvent> get eventStream => _eventController.stream;
+
+  /// Whether the socket is currently connected
+  bool get isConnected => _isConnected;
+
+  /// Connect to the Socket.IO server with JWT authentication
+  Future<void> connect() async {
+    if (_isConnected || _isConnecting) {
+      _logger.info('Socket already connected or connecting');
+      return;
+    }
+
+    final user = _storage.getCurrentUser();
+    if (user == null || user.token == null) {
+      _logger.warning('Cannot connect socket: no authenticated user');
+      return;
+    }
+
+    _isConnecting = true;
+
+    try {
+      _logger.info('Connecting to Socket.IO server...');
+
+      _socket = io.io(
+        _socketUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .setAuth({'token': user.token})
+            .enableAutoConnect()
+            .enableReconnection()
+            .setReconnectionAttempts(10)
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(5000)
+            .build(),
+      );
+
+      _setupEventListeners();
+
+      // Wait for connection or timeout after 10 seconds
+      final completer = Completer<void>();
+      Timer? timeoutTimer;
+
+      void onConnect(_) {
+        timeoutTimer?.cancel();
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+
+      void onError(error) {
+        timeoutTimer?.cancel();
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+      }
+
+      _socket!.onConnect(onConnect);
+      _socket!.onConnectError(onError);
+
+      timeoutTimer = Timer(const Duration(seconds: 10), () {
+        if (!completer.isCompleted) {
+          completer.completeError('Connection timeout');
+        }
+      });
+
+      _socket!.connect();
+
+      await completer.future;
+      _isConnected = true;
+      _isConnecting = false;
+      _logger.info('Socket.IO connected successfully');
+    } catch (e, stackTrace) {
+      _isConnecting = false;
+      _logger.error('Failed to connect to Socket.IO', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Set up event listeners for time entry events
+  void _setupEventListeners() {
+    if (_socket == null) return;
+
+    // Connection events
+    _socket!.onConnect((_) {
+      _isConnected = true;
+      _logger.info('Socket connected');
+    });
+
+    _socket!.onDisconnect((_) {
+      _isConnected = false;
+      _logger.info('Socket disconnected');
+    });
+
+    _socket!.onConnectError((error) {
+      _isConnected = false;
+      _logger.error('Socket connection error', error, null);
+    });
+
+    _socket!.onReconnect((_) {
+      _isConnected = true;
+      _logger.info('Socket reconnected');
+    });
+
+    _socket!.onReconnectAttempt((attempt) {
+      _logger.info('Socket reconnect attempt: $attempt');
+    });
+
+    _socket!.onReconnectError((error) {
+      _logger.error('Socket reconnect error', error, null);
+    });
+
+    // Time entry events
+    _socket!.on('timeEntry:started', (data) {
+      _logger.info('Received timeEntry:started event: $data');
+      try {
+        final payload = data is Map<String, dynamic>
+            ? data
+            : Map<String, dynamic>.from(data as Map);
+        final event = TimeEntryEvent.fromStartedPayload(payload);
+        _eventController.add(event);
+        _logger.info('Processed timeEntry:started for project: ${event.projectName}');
+      } catch (e, stackTrace) {
+        _logger.error('Failed to parse timeEntry:started event', e, stackTrace);
+      }
+    });
+
+    _socket!.on('timeEntry:ended', (data) {
+      _logger.info('Received timeEntry:ended event: $data');
+      try {
+        final payload = data is Map<String, dynamic>
+            ? data
+            : Map<String, dynamic>.from(data as Map);
+        final event = TimeEntryEvent.fromEndedPayload(payload);
+        _eventController.add(event);
+        _logger.info('Processed timeEntry:ended for project: ${event.projectName}');
+      } catch (e, stackTrace) {
+        _logger.error('Failed to parse timeEntry:ended event', e, stackTrace);
+      }
+    });
+  }
+
+  /// Disconnect from the Socket.IO server
+  void disconnect() {
+    if (_socket != null) {
+      _logger.info('Disconnecting from Socket.IO server...');
+      _socket!.disconnect();
+      _socket!.dispose();
+      _socket = null;
+      _isConnected = false;
+      _isConnecting = false;
+      _logger.info('Socket.IO disconnected');
+    }
+  }
+
+  /// Reconnect to the Socket.IO server (useful after token refresh)
+  Future<void> reconnect() async {
+    disconnect();
+    await connect();
+  }
+
+  /// Dispose the service (call on app shutdown)
+  void dispose() {
+    disconnect();
+    _eventController.close();
+  }
+}

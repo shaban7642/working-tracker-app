@@ -12,9 +12,9 @@ class ApiService {
   final _logger = LoggerService();
   final _storage = StorageService();
 
-  // New API Configuration
+  // API Configuration
   static const String baseUrl =
-      'https://intercompany-superindulgently-lesha.ngrok-free.dev/api/v1';
+      'https://api.ssapp.site/api/v1';
 
   // Old API Configuration (commented out)
   // static const String baseUrl =
