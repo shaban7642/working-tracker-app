@@ -363,10 +363,11 @@ class _FloatingWidgetState
     return searchFieldHeight + listHeight;
   }
 
-  /// Filters projects based on search query and sorts them with active project first
+  /// Filters projects based on search query and sorts them by today's activity
   List<dynamic> _filterProjects(
     List<dynamic> projects,
     String? activeProjectId,
+    Map<String, Duration> completedDurations,
   ) {
     // First, filter by search query
     List<dynamic> filtered = projects;
@@ -385,19 +386,33 @@ class _FloatingWidgetState
       }).toList();
     }
 
-    // Sort projects: active project first, then maintain original order for the rest
-    if (activeProjectId != null) {
-      // Separate active and non-active projects to maintain stable order
-      final activeProject = filtered
-          .where((p) => p.id == activeProjectId)
-          .toList();
-      final otherProjects = filtered
-          .where((p) => p.id != activeProjectId)
-          .toList();
+    // Sort projects:
+    // 1. Active project first
+    // 2. Projects with time today (sorted by duration, most time first)
+    // 3. Projects without time today (sorted by name)
+    filtered.sort((a, b) {
+      // Active project always first
+      if (a.id == activeProjectId) return -1;
+      if (b.id == activeProjectId) return 1;
 
-      // Return with active project first, followed by others in original order
-      return [...activeProject, ...otherProjects];
-    }
+      // Check if projects have time tracked today
+      final aHasTime = completedDurations.containsKey(a.id);
+      final bHasTime = completedDurations.containsKey(b.id);
+
+      // Projects with time today come before those without
+      if (aHasTime && !bHasTime) return -1;
+      if (!aHasTime && bHasTime) return 1;
+
+      // Both have time today - sort by duration (most time first)
+      if (aHasTime && bHasTime) {
+        final aDuration = completedDurations[a.id]!;
+        final bDuration = completedDurations[b.id]!;
+        return bDuration.compareTo(aDuration); // Descending order
+      }
+
+      // Neither has time today - sort by name
+      return (a.name ?? '').compareTo(b.name ?? '');
+    });
 
     return filtered;
   }
@@ -422,9 +437,25 @@ class _FloatingWidgetState
     final currentProject = ref.watch(
       selectedProjectProvider,
     );
-    final sessionTotalTime = ref.watch(
-      sessionTotalTimeProvider,
-    );
+    final completedDurations = ref.watch(completedProjectDurationsProvider);
+
+    // Calculate active project time directly from currentTimer to ensure rebuild on every tick
+    // The timer notifier updates state every second, which triggers this rebuild
+    final Duration activeProjectTime;
+    if (currentTimer != null && currentTimer.isRunning) {
+      activeProjectTime = currentTimer.elapsedDuration;
+    } else {
+      activeProjectTime = Duration.zero;
+    }
+
+    // Calculate session total time (active + completed)
+    Duration sessionTotalTime = activeProjectTime;
+    for (final duration in completedDurations.values) {
+      sessionTotalTime += duration;
+    }
+
+    // Debug: Print timer info on every build
+    debugPrint('FloatingWidget build - activeProjectTime: ${activeProjectTime.inSeconds}s, currentTimer: ${currentTimer?.projectName}, isRunning: ${currentTimer?.isRunning}');
 
     // Extract projects list from async state (empty list if loading/error)
     final projects =
@@ -437,7 +468,9 @@ class _FloatingWidgetState
         projects,
         currentProject,
         currentTimer,
+        activeProjectTime,
         sessionTotalTime,
+        completedDurations,
       ),
     );
   }
@@ -448,7 +481,9 @@ class _FloatingWidgetState
     List<dynamic> projects,
     dynamic currentProject,
     dynamic currentTimer,
+    Duration activeProjectTime,
     Duration sessionTotalTime,
+    Map<String, Duration> completedDurations,
   ) {
     return GestureDetector(
       // Allow vertical-only dragging while keeping window stuck to right edge
@@ -518,7 +553,9 @@ class _FloatingWidgetState
                   projects,
                   currentProject,
                   currentTimer,
+                  activeProjectTime,
                   sessionTotalTime,
+                  completedDurations,
                 ),
               ),
             ),
@@ -533,7 +570,9 @@ class _FloatingWidgetState
     List<dynamic> projects,
     dynamic currentProject,
     dynamic currentTimer,
+    Duration activeProjectTime,
     Duration sessionTotalTime,
+    Map<String, Duration> completedDurations,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -596,12 +635,14 @@ class _FloatingWidgetState
                           projects,
                           currentProject,
                           currentTimer,
+                          activeProjectTime,
                           sessionTotalTime,
                         ),
                         if (_isExpanded)
                           _buildProjectList(
                             projects,
                             currentTimer,
+                            completedDurations,
                           ),
                       ],
                     ),
@@ -616,12 +657,14 @@ class _FloatingWidgetState
                       projects,
                       currentProject,
                       currentTimer,
+                      activeProjectTime,
                       sessionTotalTime,
                     ),
                     if (_isExpanded)
                       _buildProjectList(
                         projects,
                         currentTimer,
+                        completedDurations,
                       ),
                   ],
                 );
@@ -637,8 +680,10 @@ class _FloatingWidgetState
     List<dynamic> projects,
     dynamic currentProject,
     dynamic currentTimer,
+    Duration activeProjectTime,
     Duration sessionTotalTime,
   ) {
+    // currentTimer is passed to _buildProjectInfo for project name
     return ConstrainedBox(
       constraints: const BoxConstraints(
         minHeight: FloatingWidgetConstants.mainRowHeight,
@@ -663,6 +708,8 @@ class _FloatingWidgetState
             Expanded(
               child: _buildProjectInfo(
                 currentProject,
+                currentTimer,
+                activeProjectTime,
                 sessionTotalTime,
               ),
             ),
@@ -692,8 +739,14 @@ class _FloatingWidgetState
   /// Builds the project name and timer display (centered)
   Widget _buildProjectInfo(
     dynamic currentProject,
+    dynamic currentTimer,
+    Duration activeProjectTime,
     Duration sessionTotalTime,
   ) {
+    // Use project name from currentTimer (API source of truth) if available
+    final projectName = currentTimer?.projectName ?? currentProject?.name;
+    final hasActiveProject = currentTimer != null || currentProject != null;
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -701,9 +754,9 @@ class _FloatingWidgetState
       children: [
         // Project name
         Text(
-          currentProject?.name ?? 'Select Project',
+          projectName ?? 'Select Project',
           style: TextStyle(
-            color: currentProject == null
+            color: !hasActiveProject
                 ? AppTheme.textSecondary
                 : AppTheme.textPrimary,
             fontSize: FloatingWidgetConstants.projectNameFontSize,
@@ -716,9 +769,9 @@ class _FloatingWidgetState
           height: FloatingWidgetConstants.nameTimerSpacing,
         ),
 
-        // Timer display - Shows session total time (sum of all projects)
+        // Timer display - Shows active project time (current project elapsed)
         Text(
-          DateTimeUtils.formatDuration(sessionTotalTime),
+          DateTimeUtils.formatDuration(activeProjectTime),
           style: const TextStyle(
             color: AppTheme.textSecondary,
             fontSize: FloatingWidgetConstants.timerFontSize,
@@ -729,6 +782,20 @@ class _FloatingWidgetState
           overflow: TextOverflow.clip,
           maxLines: 1,
         ),
+
+        // Session total time (if different from active project time)
+        if (sessionTotalTime.inSeconds > activeProjectTime.inSeconds)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              'Total: ${DateTimeUtils.formatDuration(sessionTotalTime)}',
+              style: TextStyle(
+                color: AppTheme.textHint,
+                fontSize: 10,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -805,10 +872,12 @@ class _FloatingWidgetState
   Widget _buildProjectList(
     List<dynamic> projects,
     dynamic currentTimer,
+    Map<String, Duration> completedDurations,
   ) {
     final filteredProjects = _filterProjects(
       projects,
       currentTimer?.projectId,
+      completedDurations,
     );
 
     return Container(
@@ -1048,31 +1117,42 @@ class _FloatingWidgetState
                                 ),
                               ),
 
-                              // Project total time (if > 0)
-                              if (project
-                                      .totalTime
-                                      .inSeconds >
-                                  0)
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(
-                                        right: 6,
+                              // Project time for today (current + completed)
+                              Builder(
+                                builder: (context) {
+                                  final completedDurations = ref.watch(completedProjectDurationsProvider);
+                                  final completedTime = completedDurations[project.id] ?? Duration.zero;
+                                  final currentTimer = ref.watch(currentTimerProvider);
+
+                                  final Duration displayTime;
+                                  if (isActive && currentTimer != null) {
+                                    // Active project - current elapsed + completed today
+                                    displayTime = currentTimer.elapsedDuration + completedTime;
+                                  } else {
+                                    // Inactive project - completed today only
+                                    displayTime = completedTime;
+                                  }
+
+                                  if (displayTime.inSeconds <= 0) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Text(
+                                      DateTimeUtils.formatDuration(displayTime),
+                                      style: TextStyle(
+                                        color: isActive
+                                            ? AppTheme.primaryColor
+                                            : AppTheme.textSecondary,
+                                        fontSize: FloatingWidgetConstants.dropdownTimeFontSize,
+                                        fontFamily: 'monospace',
+                                        fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                                       ),
-                                  child: Text(
-                                    DateTimeUtils.formatDuration(
-                                      project.totalTime,
                                     ),
-                                    style: const TextStyle(
-                                      color: AppTheme
-                                          .textSecondary,
-                                      fontSize:
-                                          FloatingWidgetConstants
-                                              .dropdownTimeFontSize,
-                                      fontFamily:
-                                          'monospace',
-                                    ),
-                                  ),
-                                ),
+                                  );
+                                },
+                              ),
 
                               // Active indicator dot (green circle)
                               if (isActive)

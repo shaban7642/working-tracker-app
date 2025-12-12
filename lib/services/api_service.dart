@@ -488,6 +488,76 @@ class ApiService {
     }
   }
 
+  /// Get all time entries for today (current session)
+  /// GET /projects/time-entries/history?from={startOfDay}
+  Future<List<Map<String, dynamic>>> getTodayTimeEntries() async {
+    try {
+      final today = DateTime.now();
+      final startOfDay = DateTime(today.year, today.month, today.day);
+      // Convert to UTC for API
+      final startOfDayUtc = startOfDay.toUtc();
+
+      _logger.info('Fetching today\'s time entries from: ${startOfDayUtc.toIso8601String()} (local: ${startOfDay.toIso8601String()})');
+
+      final uri = Uri.parse('$baseUrl/projects/time-entries/history').replace(
+        queryParameters: {
+          'from': startOfDayUtc.toIso8601String(),
+          'limit': '100', // Get more entries to ensure we don't miss any
+        },
+      );
+
+      _logger.info('Fetching time entries from: $uri');
+
+      final response = await http.get(uri, headers: _headers);
+
+      _logger.info('Time entries response status: ${response.statusCode}');
+      _logger.info('Time entries response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+
+        // Log full response structure
+        _logger.info('Response keys: ${data.keys.toList()}');
+
+        if (data['entries'] != null && data['entries'] is List) {
+          final entries = (data['entries'] as List)
+              .map((e) => e as Map<String, dynamic>)
+              .toList();
+          _logger.info('Found ${entries.length} time entries for today');
+
+          // Log each entry for debugging
+          for (int i = 0; i < entries.length; i++) {
+            final entry = entries[i];
+            _logger.info('Entry $i: id=${entry['_id']}, project=${entry['project']}, startedAt=${entry['startedAt']}, endedAt=${entry['endedAt']}, duration=${entry['duration']}');
+          }
+
+          return entries;
+        }
+
+        // Check alternative response formats
+        if (data['data'] != null && data['data'] is List) {
+          final entries = (data['data'] as List)
+              .map((e) => e as Map<String, dynamic>)
+              .toList();
+          _logger.info('Found ${entries.length} time entries in data field');
+          return entries;
+        }
+
+        _logger.warning('No entries found in response: ${data.keys.toList()}');
+        return [];
+      } else if (response.statusCode == 401) {
+        _logger.error('Unauthorized - user may need to re-login', null, null);
+        throw Exception('Unauthorized - please login again');
+      } else {
+        _logger.warning('Failed to fetch today\'s entries: ${response.statusCode} - ${response.body}');
+        return [];
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error fetching today\'s time entries', e, stackTrace);
+      return [];
+    }
+  }
+
   /// Fetch daily reports (paginated) with optional date filtering
   /// GET /reports/daily-reports
   Future<Map<String, dynamic>> getDailyReports({

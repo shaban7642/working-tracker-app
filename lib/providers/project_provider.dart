@@ -3,6 +3,7 @@ import '../models/project.dart';
 import '../services/project_service.dart';
 import '../services/logger_service.dart';
 import 'auth_provider.dart';
+import 'timer_provider.dart';
 
 // Project service provider
 final projectServiceProvider = Provider<ProjectService>((ref) {
@@ -158,17 +159,31 @@ final activeProjectsProvider = Provider<List<Project>>((ref) {
   ) ?? [];
 });
 
-// Session total time provider (sum of all project times)
-final sessionTotalTimeProvider = Provider<Duration>((ref) {
-  final projectsAsync = ref.watch(projectsProvider);
+// Active project time provider - shows only the current active project's elapsed time
+final activeProjectTimeProvider = Provider<Duration>((ref) {
+  final activeSession = ref.watch(currentTimerProvider);
+  if (activeSession != null && activeSession.isRunning) {
+    return activeSession.elapsedDuration;
+  }
+  return Duration.zero;
+});
 
-  return projectsAsync.whenOrNull(
-    data: (projects) {
-      Duration totalTime = Duration.zero;
-      for (final project in projects) {
-        totalTime += project.totalTime;
-      }
-      return totalTime;
-    },
-  ) ?? Duration.zero;
+// Session total time provider - combines current active session + all completed entries today
+final sessionTotalTimeProvider = Provider<Duration>((ref) {
+  final activeSession = ref.watch(currentTimerProvider);
+  final completedDurations = ref.watch(completedProjectDurationsProvider);
+
+  Duration total = Duration.zero;
+
+  // Add current active session elapsed time
+  if (activeSession != null && activeSession.isRunning) {
+    total += activeSession.elapsedDuration;
+  }
+
+  // Add all completed project durations from today
+  for (final duration in completedDurations.values) {
+    total += duration;
+  }
+
+  return total;
 });

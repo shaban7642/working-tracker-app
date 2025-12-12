@@ -11,6 +11,7 @@ import '../core/utils/date_time_utils.dart';
 import '../models/project.dart';
 import '../models/task_submission.dart';
 import '../providers/auth_provider.dart';
+import '../providers/project_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/timer_provider.dart';
 import '../services/api_service.dart';
@@ -55,9 +56,12 @@ class _SubmissionFormScreenState
 
   void _initializeFormData() {
     _projectTasks = {};
-    // Initialize with tasks for each project that has time tracked
+    // Get today's completed durations from API
+    final completedDurations = ref.read(completedProjectDurationsProvider);
+
+    // Initialize with tasks for each project that has time tracked today
     for (var project in widget.projects.where(
-      (p) => p.totalTime.inSeconds > 0,
+      (p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0,
     )) {
       // Get pre-added tasks from the provider
       final preAddedTasks = ref.read(
@@ -369,12 +373,13 @@ class _SubmissionFormScreenState
 
       // End time tracking on server for all projects being submitted
       final api = ApiService();
-      for (var project in widget.projects.where((p) => p.totalTime.inSeconds > 0)) {
+      final completedDurations = ref.read(completedProjectDurationsProvider);
+      for (var project in widget.projects.where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)) {
         await api.endTime(project.id);
       }
 
       // Update form data with latest task durations from provider
-      for (var project in widget.projects.where((p) => p.totalTime.inSeconds > 0)) {
+      for (var project in widget.projects.where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)) {
         final freshTasks = ref.read(projectTasksProvider(project.id));
         final formTasks = _projectTasks[project.id] ?? [];
 
@@ -405,7 +410,7 @@ class _SubmissionFormScreenState
       final List<TaskSubmission> allTasks = [];
 
       for (var project in widget.projects.where(
-        (p) => p.totalTime.inSeconds > 0,
+        (p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0,
       )) {
         final tasks = _projectTasks[project.id] ?? [];
         for (var taskData in tasks) {
@@ -471,8 +476,11 @@ class _SubmissionFormScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Watch today's completed durations from API
+    final completedDurations = ref.watch(completedProjectDurationsProvider);
+
     final projectsWithTime = widget.projects
-        .where((p) => p.totalTime.inSeconds > 0)
+        .where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)
         .toList();
 
     if (projectsWithTime.isEmpty) {
@@ -584,7 +592,7 @@ class _SubmissionFormScreenState
                               ),
                         ),
                         Text(
-                          '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} • ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime))}',
+                          '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} • ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime, completedDurations))}',
                           style: TextStyle(
                             fontSize: 11,
                             color: AppTheme.textSecondary,
@@ -603,8 +611,10 @@ class _SubmissionFormScreenState
                   padding: EdgeInsets.zero,
                   itemCount: projectsWithTime.length,
                   itemBuilder: (context, projectIndex) {
+                    final project = projectsWithTime[projectIndex];
                     return _buildProjectCard(
-                      projectsWithTime[projectIndex],
+                      project,
+                      completedDurations[project.id] ?? Duration.zero,
                     );
                   },
                 ),
@@ -653,7 +663,7 @@ class _SubmissionFormScreenState
     );
   }
 
-  Widget _buildProjectCard(Project project) {
+  Widget _buildProjectCard(Project project, Duration todayTime) {
     final tasks = _projectTasks[project.id] ?? [];
 
     return Container(
@@ -683,9 +693,7 @@ class _SubmissionFormScreenState
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      DateTimeUtils.formatDuration(
-                        project.totalTime,
-                      ),
+                      DateTimeUtils.formatDuration(todayTime),
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppTheme.textSecondary,
@@ -754,7 +762,7 @@ class _SubmissionFormScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Task header with duration and delete button
+          // Task header with delete button
           Row(
             children: [
               Text(
@@ -763,16 +771,6 @@ class _SubmissionFormScreenState
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                DateTimeUtils.formatDuration(taskData.duration),
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.primaryColor,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w600,
                 ),
               ),
               const Spacer(),
@@ -1184,10 +1182,10 @@ class _SubmissionFormScreenState
     );
   }
 
-  Duration _getTotalTime(List<Project> projects) {
+  Duration _getTotalTime(List<Project> projects, Map<String, Duration> completedDurations) {
     return projects.fold(
       Duration.zero,
-      (total, project) => total + project.totalTime,
+      (total, project) => total + (completedDurations[project.id] ?? Duration.zero),
     );
   }
 

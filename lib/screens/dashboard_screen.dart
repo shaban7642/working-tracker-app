@@ -62,10 +62,11 @@ class _DashboardScreenState
     super.dispose();
   }
 
-  /// Filters projects based on search query and sorts them by recent activity
+  /// Filters projects based on search query and sorts them by today's activity
   List<Project> _filterProjects(
     List<Project> projects,
     String? activeProjectId,
+    Map<String, Duration> completedDurations,
   ) {
     // First, filter by search query
     List<Project> filtered = projects;
@@ -84,27 +85,31 @@ class _DashboardScreenState
       }).toList();
     }
 
-    // Sort projects: active project first, then by lastActiveAt (most recent first)
+    // Sort projects:
+    // 1. Active project first
+    // 2. Projects with time today (sorted by duration, most time first)
+    // 3. Projects without time today (sorted by name)
     filtered.sort((a, b) {
       // Active project always first
       if (a.id == activeProjectId) return -1;
       if (b.id == activeProjectId) return 1;
 
-      // Then sort by lastActiveAt (most recent first)
-      final aLastActive = a.lastActiveAt;
-      final bLastActive = b.lastActiveAt;
+      // Check if projects have time tracked today
+      final aHasTime = completedDurations.containsKey(a.id);
+      final bHasTime = completedDurations.containsKey(b.id);
 
-      if (aLastActive != null && bLastActive != null) {
-        return bLastActive.compareTo(
-          aLastActive,
-        ); // Descending order
+      // Projects with time today come before those without
+      if (aHasTime && !bHasTime) return -1;
+      if (!aHasTime && bHasTime) return 1;
+
+      // Both have time today - sort by duration (most time first)
+      if (aHasTime && bHasTime) {
+        final aDuration = completedDurations[a.id]!;
+        final bDuration = completedDurations[b.id]!;
+        return bDuration.compareTo(aDuration); // Descending order
       }
-      if (aLastActive != null)
-        return -1; // a has activity, b doesn't
-      if (bLastActive != null)
-        return 1; // b has activity, a doesn't
 
-      // Neither has been worked on - sort by name
+      // Neither has time today - sort by name
       return a.name.compareTo(b.name);
     });
 
@@ -482,10 +487,14 @@ class _DashboardScreenState
                         );
                       }
 
+                      // Get completed durations for sorting
+                      final completedDurations = ref.watch(completedProjectDurationsProvider);
+
                       final filteredProjects =
                           _filterProjects(
                             projects,
                             currentTimer?.projectId,
+                            completedDurations,
                           );
 
                       if (filteredProjects.isEmpty) {
@@ -659,24 +668,50 @@ class _DashboardScreenState
                                                           overflow: TextOverflow.ellipsis,
                                                         ),
                                                       ),
-                                                      // Time for this project
-                                                      if (project.totalTime.inSeconds >
-                                                          0)
-                                                        Padding(
-                                                          padding: const EdgeInsets.only(
-                                                            right: 8,
-                                                          ),
-                                                          child: Text(
-                                                            DateTimeUtils.formatDuration(
-                                                              project.totalTime,
+                                                      // Time for this project (today's time)
+                                                      // Active project: current elapsed + any completed time today
+                                                      // Inactive projects: completed time today only
+                                                      Builder(
+                                                        builder: (context) {
+                                                          // Get completed time for this project from today's entries
+                                                          final completedDurations = ref.watch(completedProjectDurationsProvider);
+                                                          final completedTime = completedDurations[project.id] ?? Duration.zero;
+
+                                                          final Duration displayTime;
+                                                          if (isActive && currentTimer != null) {
+                                                            // Active project - current elapsed + any completed time today
+                                                            displayTime = currentTimer.elapsedDuration + completedTime;
+                                                          } else {
+                                                            // Inactive project - only completed time today
+                                                            displayTime = completedTime;
+                                                          }
+
+                                                          if (displayTime.inSeconds <= 0) {
+                                                            return const SizedBox.shrink();
+                                                          }
+
+                                                          return Padding(
+                                                            padding: const EdgeInsets.only(
+                                                              right: 8,
                                                             ),
-                                                            style: const TextStyle(
-                                                              color: AppTheme.textSecondary,
-                                                              fontSize: 11,
-                                                              fontFamily: 'monospace',
+                                                            child: Text(
+                                                              DateTimeUtils.formatDuration(
+                                                                displayTime,
+                                                              ),
+                                                              style: TextStyle(
+                                                                color: isActive
+                                                                    ? AppTheme.successColor
+                                                                    : AppTheme.textSecondary,
+                                                                fontSize: 11,
+                                                                fontFamily: 'monospace',
+                                                                fontWeight: isActive
+                                                                    ? FontWeight.w600
+                                                                    : FontWeight.normal,
+                                                              ),
                                                             ),
-                                                          ),
-                                                        ),
+                                                          );
+                                                        },
+                                                      ),
                                                       // Expand arrow indicator
                                                       Icon(
                                                         isTaskEntryExpanded

@@ -1,114 +1,242 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/time_entry.dart';
 import '../models/time_entry_event.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
-import '../services/timer_service.dart';
 import '../services/logger_service.dart';
 import '../services/socket_service.dart';
 import 'auth_provider.dart';
 import 'project_provider.dart';
 import 'task_provider.dart';
 
-// Timer service provider
-final timerServiceProvider = Provider<TimerService>((ref) {
-  return TimerService();
-});
+/// Represents the current active session from the server
+class ActiveSession {
+  final String id;
+  final String projectId;
+  final String projectName;
+  final DateTime startedAt; // Always stored in local time
+  final bool isRunning;
 
-// Current timer state provider
-final currentTimerProvider = StateNotifierProvider<CurrentTimerNotifier, TimeEntry?>((ref) {
+  ActiveSession({
+    required this.id,
+    required this.projectId,
+    required this.projectName,
+    required this.startedAt,
+    this.isRunning = true,
+  });
+
+  /// Calculate elapsed duration from server's startedAt time
+  Duration get elapsedDuration {
+    if (!isRunning) return Duration.zero;
+    final now = DateTime.now();
+    final elapsed = now.difference(startedAt);
+    // Ensure we never return negative duration
+    return elapsed.isNegative ? Duration.zero : elapsed;
+  }
+
+  ActiveSession copyWith({
+    String? id,
+    String? projectId,
+    String? projectName,
+    DateTime? startedAt,
+    bool? isRunning,
+  }) {
+    return ActiveSession(
+      id: id ?? this.id,
+      projectId: projectId ?? this.projectId,
+      projectName: projectName ?? this.projectName,
+      startedAt: startedAt ?? this.startedAt,
+      isRunning: isRunning ?? this.isRunning,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'ActiveSession(id: $id, projectId: $projectId, projectName: $projectName, startedAt: $startedAt, isRunning: $isRunning, elapsed: ${elapsedDuration.inSeconds}s)';
+  }
+}
+
+// Current timer state provider - uses ActiveSession from server
+final currentTimerProvider = StateNotifierProvider<CurrentTimerNotifier, ActiveSession?>((ref) {
   return CurrentTimerNotifier(ref);
 });
 
-class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
+// Completed project durations provider - tracks time for projects worked on today (already ended)
+final completedProjectDurationsProvider = StateProvider<Map<String, Duration>>((ref) => {});
+
+class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
   final Ref _ref;
-  late final TimerService _timerService;
   late final LoggerService _logger;
   final _api = ApiService();
   final _socketService = SocketService();
-  StreamSubscription<Duration>? _timerSubscription;
   StreamSubscription<TimeEntryEvent>? _socketSubscription;
-  DateTime? _taskStartTime; // Track when current task started
+  Timer? _uiRefreshTimer;
+  DateTime? _taskStartTime;
 
-  // Expose task start time for calculating task-specific duration
   DateTime? get taskStartTime => _taskStartTime;
 
   CurrentTimerNotifier(this._ref) : super(null) {
-    _timerService = _ref.read(timerServiceProvider);
     _logger = _ref.read(loggerServiceProvider);
-    _initialize();
+    _logger.info('Timer provider initialized (server-based)');
   }
 
-  Future<void> _initialize() async {
-    try {
-      await _timerService.initialize();
-      state = _timerService.currentEntry;
-
-      // Listen to timer stream
-      _timerSubscription = _timerService.timerStream.listen((_) {
-        // Update state to trigger UI rebuild
-        if (_timerService.currentEntry != null) {
-          final entry = _timerService.currentEntry!;
-          // IMPORTANT: Create a new object to trigger Riverpod state change
-          // The same object reference won't trigger rebuilds even if actualDuration changes
-          state = entry.copyWith();
-
-          // Refresh project times to show real-time updates in project list
-          _ref.read(projectsProvider.notifier).refreshProjectTimes();
-        }
-      });
-
-      _logger.info('Timer provider initialized');
-    } catch (e, stackTrace) {
-      _logger.error('Failed to initialize timer provider', e, stackTrace);
-    }
+  /// Start UI refresh timer to update elapsed time display every second
+  void _startUiRefreshTimer() {
+    _uiRefreshTimer?.cancel();
+    _logger.info('Starting UI refresh timer...');
+    _uiRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (state != null && state!.isRunning) {
+        // Create a new state object to trigger UI rebuild
+        final newState = state!.copyWith();
+        _logger.debug('UI refresh tick - elapsed: ${newState.elapsedDuration.inSeconds}s');
+        state = newState;
+      }
+    });
+    _logger.info('UI refresh timer started');
   }
 
-  /// Check for open entry from API and sync local state (one-time call on login)
-  /// Also starts listening to socket events for real-time updates
+  /// Stop UI refresh timer
+  void _stopUiRefreshTimer() {
+    _uiRefreshTimer?.cancel();
+    _uiRefreshTimer = null;
+  }
+
+  /// Check for open entry from API and sync state
+  /// Also fetches today's completed entries and starts listening to socket events
+  /// This is the SOURCE OF TRUTH - socket events only update this state
   Future<void> checkAndSyncOpenEntry() async {
     try {
       _logger.info('Checking for open entry from server...');
-      final openEntry = await _api.getOpenEntry();
 
-      if (openEntry != null) {
-        // API returns 'project' field - can be string ID or nested object {_id, name, ...}
-        String? projectId;
-        final projectField = openEntry['project'];
-        if (projectField is Map) {
-          // Nested object: extract _id
-          projectId = projectField['_id']?.toString();
-        } else {
-          // Direct string ID
-          projectId = projectField?.toString();
-        }
+      // Stop any existing UI refresh timer first
+      _stopUiRefreshTimer();
 
-        if (projectId != null) {
-          // Find the project in local state
-          final projects = _ref.read(projectsProvider).valueOrNull ?? [];
-          final project = projects.cast<Project?>().firstWhere(
-            (p) => p?.id == projectId,
-            orElse: () => null,
-          );
+      // Fetch open entry and today's completed entries in parallel
+      final results = await Future.wait([
+        _api.getOpenEntry(),
+        _api.getTodayTimeEntries(),
+      ]);
 
-          if (project != null) {
-            // Only select project if not already running for this project
-            if (state == null || state!.projectId != projectId) {
-              _logger.info('Syncing open entry - selecting project: ${project.name}');
-              // Use local selection since timer is already running on server
-              await _selectProjectLocally(project);
-            }
+      final openEntry = results[0] as Map<String, dynamic>?;
+      final todayEntries = results[1] as List<Map<String, dynamic>>;
+
+      _logger.info('API Response - openEntry: $openEntry');
+      _logger.info('API Response - todayEntries count: ${todayEntries.length}');
+
+      // Process today's completed entries to build completedProjectDurations
+      final Map<String, Duration> completedDurations = {};
+      for (final entry in todayEntries) {
+        // Only count completed entries (have endedAt)
+        if (entry['endedAt'] != null) {
+          final projectField = entry['project'];
+          String? projectId;
+          if (projectField is Map) {
+            projectId = projectField['_id']?.toString();
           } else {
-            _logger.warning('Project not found locally: $projectId');
+            projectId = projectField?.toString();
+          }
+
+          if (projectId != null) {
+            final duration = Duration(seconds: entry['duration'] as int? ?? 0);
+            completedDurations[projectId] = (completedDurations[projectId] ?? Duration.zero) + duration;
+            _logger.info('Added completed duration: $projectId -> ${duration.inSeconds}s');
           }
         }
-      } else {
-        // No open entry on server - unselect project locally
-        if (state != null) {
-          _logger.info('No open entry on server - unselecting project');
-          await _unselectProjectLocally();
+      }
+
+      // Update the completed durations provider
+      _ref.read(completedProjectDurationsProvider.notifier).state = completedDurations;
+      _logger.info('Loaded ${completedDurations.length} completed project durations for today');
+
+      if (openEntry != null) {
+        _logger.info('Open entry found: $openEntry');
+
+        // Extract project info from API response
+        String? projectId;
+        String projectName = '';
+        final projectField = openEntry['project'];
+        if (projectField is Map) {
+          projectId = projectField['_id']?.toString();
+          projectName = projectField['name']?.toString() ?? '';
+          _logger.info('Extracted from project map: id=$projectId, name=$projectName');
+        } else {
+          projectId = projectField?.toString();
+          _logger.info('Extracted project as string: id=$projectId');
         }
+
+        // Extract startedAt time - convert to local time
+        DateTime? startedAt;
+        final startedAtField = openEntry['startedAt'];
+        if (startedAtField is String) {
+          final parsed = DateTime.tryParse(startedAtField);
+          // Server returns UTC, convert to local
+          startedAt = parsed?.toLocal();
+        } else if (startedAtField is DateTime) {
+          startedAt = startedAtField.toLocal();
+        }
+
+        // Extract entry ID
+        final entryId = openEntry['_id']?.toString() ?? '';
+
+        _logger.info('Parsed open entry: projectId=$projectId, projectName=$projectName, startedAt=$startedAt (raw: $startedAtField)');
+        _logger.info('Current time: ${DateTime.now()}, elapsed would be: ${startedAt != null ? DateTime.now().difference(startedAt).inSeconds : 0}s');
+
+        if (projectId != null && startedAt != null) {
+          // Get projects list
+          final projects = _ref.read(projectsProvider).valueOrNull ?? [];
+          _logger.info('Available projects count: ${projects.length}');
+
+          // Find the matching project
+          Project? matchedProject;
+          for (final p in projects) {
+            if (p.id == projectId) {
+              matchedProject = p;
+              break;
+            }
+          }
+
+          // Use project name from API if available, otherwise from matched project
+          if (projectName.isEmpty && matchedProject != null) {
+            projectName = matchedProject.name;
+          }
+          if (projectName.isEmpty) {
+            projectName = 'Unknown Project';
+          }
+
+          _logger.info('Final project name: $projectName, matched project: ${matchedProject?.name}');
+
+          // Set the active session from server data
+          final newSession = ActiveSession(
+            id: entryId,
+            projectId: projectId,
+            projectName: projectName,
+            startedAt: startedAt,
+            isRunning: true,
+          );
+
+          _logger.info('Created ActiveSession: $newSession');
+          _logger.info('Elapsed duration: ${newSession.elapsedDuration.inSeconds}s');
+
+          state = newSession;
+
+          // Update selected project provider with the matched project
+          _ref.read(selectedProjectProvider.notifier).state = matchedProject;
+          _logger.info('Set selectedProjectProvider to: ${matchedProject?.name ?? "null"}');
+
+          // Start UI refresh timer
+          _startUiRefreshTimer();
+
+          _logger.info('STATE AFTER SYNC: state=$state, elapsed=${state?.elapsedDuration.inSeconds}s');
+        } else {
+          _logger.warning('Could not parse open entry - missing projectId or startedAt');
+          state = null;
+          _ref.read(selectedProjectProvider.notifier).state = null;
+        }
+      } else {
+        // No open entry on server - clear everything
+        _logger.info('No open entry on server - clearing local state');
+        state = null;
+        _ref.read(selectedProjectProvider.notifier).state = null;
       }
 
       // Start listening to socket events for real-time updates
@@ -118,59 +246,84 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  /// Start listening to socket events for real-time time entry updates
+  /// Start listening to socket events for real-time updates
   void _startSocketEventListener() {
     _socketSubscription?.cancel();
+    _logger.info('Starting socket event listener...');
     _socketSubscription = _socketService.eventStream.listen(
-      _handleSocketEvent,
+      (event) {
+        _logger.info('Socket event received: ${event.type} for ${event.projectName}');
+        _handleSocketEvent(event);
+      },
       onError: (error) {
         _logger.error('Socket event stream error', error, null);
       },
     );
-    _logger.info('Socket event listener started');
   }
 
-  /// Handle incoming socket events for time entry changes
+  /// Handle incoming socket events
   Future<void> _handleSocketEvent(TimeEntryEvent event) async {
     try {
       _logger.info('Handling socket event: ${event.type} for project: ${event.projectName}');
 
       if (event.type == TimeEntryEventType.started) {
-        // Time entry started - select the project locally
+        // Time entry started - update state with server data
+        state = ActiveSession(
+          id: event.id,
+          projectId: event.projectId,
+          projectName: event.projectName,
+          startedAt: event.startedAt,
+          isRunning: true,
+        );
+
+        // Update selected project
         final projects = _ref.read(projectsProvider).valueOrNull ?? [];
         final project = projects.cast<Project?>().firstWhere(
           (p) => p?.id == event.projectId,
           orElse: () => null,
         );
-
         if (project != null) {
-          // Only update if different from current state
-          if (state == null || state!.projectId != event.projectId) {
-            _logger.info('Socket: Time started for project: ${project.name}');
-            await _selectProjectLocally(project);
-          }
-        } else {
-          _logger.warning('Socket: Project not found locally: ${event.projectId}');
+          _ref.read(selectedProjectProvider.notifier).state = project;
         }
+
+        // Start UI refresh timer
+        _startUiRefreshTimer();
+
+        _logger.info('Session started: ${event.projectName} at ${event.startedAt}');
       } else if (event.type == TimeEntryEventType.ended) {
-        // Time entry ended - check if it's our current project
-        if (state != null && state!.projectId == event.projectId) {
-          _logger.info('Socket: Time ended for current project: ${event.projectName}');
-          await _unselectProjectLocally();
-          // Refresh projects to update total time
-          await _ref.read(projectsProvider.notifier).refreshProjects();
+        // Time entry ended - add duration to completed durations
+        if (event.duration != null && event.duration! > 0) {
+          final currentDurations = Map<String, Duration>.from(
+            _ref.read(completedProjectDurationsProvider),
+          );
+          final duration = Duration(seconds: event.duration!);
+          currentDurations[event.projectId] =
+              (currentDurations[event.projectId] ?? Duration.zero) + duration;
+          _ref.read(completedProjectDurationsProvider.notifier).state = currentDurations;
+          _logger.info('Added ${duration.inSeconds}s to completed durations for ${event.projectName}');
         }
+
+        // Clear active session if it matches
+        if (state != null && state!.projectId == event.projectId) {
+          _stopUiRefreshTimer();
+          state = null;
+          _ref.read(activeTaskIdProvider.notifier).state = null;
+          _ref.read(selectedProjectProvider.notifier).state = null;
+
+          _logger.info('Session ended: ${event.projectName}');
+        }
+
+        // Refresh projects to update totals
+        await _ref.read(projectsProvider.notifier).refreshProjects();
       }
     } catch (e, stackTrace) {
       _logger.error('Failed to handle socket event', e, stackTrace);
     }
   }
 
-  /// Stop listening to socket events
   void stopSocketEventListener() {
     _socketSubscription?.cancel();
     _socketSubscription = null;
-    _logger.info('Socket event listener stopped');
   }
 
   // Start timer for project (calls API)
@@ -178,19 +331,13 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     try {
       // If already running for another project, end it first
       if (state != null && state!.isRunning && state!.projectId != project.id) {
-        final endSuccess = await _api.endTime(state!.projectId);
-        if (!endSuccess) {
-          throw Exception('Failed to end current time entry');
-        }
+        await _api.endTime(state!.projectId);
       }
 
-      // Only add myself if I haven't worked on this project before
+      // Add to project if needed
       final hasWorked = await _api.hasWorkedOnProject(project.id);
       if (!hasWorked) {
-        final addSuccess = await _api.addMyselfToProject(project.id);
-        if (!addSuccess) {
-          throw Exception('Failed to add to project');
-        }
+        await _api.addMyselfToProject(project.id);
       }
 
       // Start time on server
@@ -199,13 +346,18 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
         throw Exception('Failed to start time on server');
       }
 
-      // Start local timer
-      final entry = await _timerService.startTimer(project);
-      state = entry;
-      _ref.read(activeTaskIdProvider.notifier).state = null;
+      // Set local state with current time (will be corrected by socket event)
+      state = ActiveSession(
+        id: 'pending',
+        projectId: project.id,
+        projectName: project.name,
+        startedAt: DateTime.now(),
+        isRunning: true,
+      );
 
-      // Update selected project
+      _ref.read(activeTaskIdProvider.notifier).state = null;
       _ref.read(selectedProjectProvider.notifier).state = project;
+      _startUiRefreshTimer();
 
       _logger.info('Timer started for: ${project.name}');
     } catch (e, stackTrace) {
@@ -214,33 +366,7 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  // Select project locally without calling API (used for sync from server)
-  Future<void> _selectProjectLocally(Project project) async {
-    try {
-      final entry = await _timerService.startTimer(project);
-      state = entry;
-      _ref.read(activeTaskIdProvider.notifier).state = null;
-      _ref.read(selectedProjectProvider.notifier).state = project;
-      _logger.info('Project selected locally: ${project.name}');
-    } catch (e, stackTrace) {
-      _logger.error('Failed to select project locally', e, stackTrace);
-    }
-  }
-
-  // Unselect project locally without calling API (used when server has no open entry)
-  Future<void> _unselectProjectLocally() async {
-    try {
-      await _timerService.stopTimer();
-      state = null;
-      _ref.read(activeTaskIdProvider.notifier).state = null;
-      _ref.read(selectedProjectProvider.notifier).state = null;
-      _logger.info('Project unselected locally');
-    } catch (e, stackTrace) {
-      _logger.error('Failed to unselect project locally', e, stackTrace);
-    }
-  }
-
-  // Save current task's elapsed time before switching (public for submission form)
+  // Save current task's elapsed time before switching
   Future<void> saveCurrentTaskDuration() async {
     final activeTaskId = _ref.read(activeTaskIdProvider);
     if (activeTaskId != null && _taskStartTime != null) {
@@ -252,62 +378,59 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  // Start timer for project with specific task active
+  // Start timer with specific task
   Future<void> startTimerWithTask(Project project, String taskId) async {
     try {
       // If already running for this project, just switch task
       if (state != null && state!.projectId == project.id && state!.isRunning) {
-        // Save current task duration before switching
         await saveCurrentTaskDuration();
-
         _ref.read(activeTaskIdProvider.notifier).state = taskId;
-        _taskStartTime = DateTime.now(); // Start tracking new task
-        _logger.info('Switched to task: $taskId in project: ${project.name}');
+        _taskStartTime = DateTime.now();
+        _logger.info('Switched to task: $taskId');
         return;
       }
 
-      // Save current task duration before switching projects
       await saveCurrentTaskDuration();
 
-      // Otherwise start/switch the project timer
+      // Start or switch project
       if (state != null && state!.isRunning) {
         await switchProject(project);
       } else {
-        // No timer running - start new project with API calls
-        // Only add myself if I haven't worked on this project before
         final hasWorked = await _api.hasWorkedOnProject(project.id);
         if (!hasWorked) {
-          final addSuccess = await _api.addMyselfToProject(project.id);
-          if (!addSuccess) {
-            throw Exception('Failed to add to project');
-          }
+          await _api.addMyselfToProject(project.id);
         }
+
         final startSuccess = await _api.startTime(project.id);
         if (!startSuccess) {
           throw Exception('Failed to start time on server');
         }
 
-        final entry = await _timerService.startTimer(project);
-        state = entry;
+        state = ActiveSession(
+          id: 'pending',
+          projectId: project.id,
+          projectName: project.name,
+          startedAt: DateTime.now(),
+          isRunning: true,
+        );
         _ref.read(selectedProjectProvider.notifier).state = project;
+        _startUiRefreshTimer();
       }
 
       _ref.read(activeTaskIdProvider.notifier).state = taskId;
-      _taskStartTime = DateTime.now(); // Start tracking new task
-      _logger.info('Timer started for task: $taskId in project: ${project.name}');
+      _taskStartTime = DateTime.now();
+      _logger.info('Timer started with task: $taskId');
     } catch (e, stackTrace) {
       _logger.error('Failed to start timer with task', e, stackTrace);
       rethrow;
     }
   }
 
-  // Stop timer (calls API endTime)
+  // Stop timer (calls API)
   Future<void> stopTimer() async {
     try {
-      // Save current task duration before stopping
       await saveCurrentTaskDuration();
 
-      // End time on server
       if (state != null && state!.projectId.isNotEmpty) {
         final endSuccess = await _api.endTime(state!.projectId);
         if (!endSuccess) {
@@ -315,11 +438,11 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
         }
       }
 
-      await _timerService.stopTimer();
+      _stopUiRefreshTimer();
       state = null;
       _ref.read(activeTaskIdProvider.notifier).state = null;
+      _ref.read(selectedProjectProvider.notifier).state = null;
 
-      // Refresh projects to update total time
       await _ref.read(projectsProvider.notifier).refreshProjects();
 
       _logger.info('Timer stopped');
@@ -329,44 +452,39 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  // Switch project (calls API: endTime → addMyself → startTime)
+  // Switch project
   Future<void> switchProject(Project project) async {
     try {
-      // Save current task duration before switching projects
       await saveCurrentTaskDuration();
 
-      // End current project on server
+      // End current project
       if (state != null && state!.projectId.isNotEmpty) {
-        final endSuccess = await _api.endTime(state!.projectId);
-        if (!endSuccess) {
-          throw Exception('Failed to end current time entry');
-        }
+        await _api.endTime(state!.projectId);
       }
 
-      // Only add myself if I haven't worked on this project before
+      // Add to new project if needed
       final hasWorked = await _api.hasWorkedOnProject(project.id);
       if (!hasWorked) {
-        final addSuccess = await _api.addMyselfToProject(project.id);
-        if (!addSuccess) {
-          throw Exception('Failed to add to project');
-        }
+        await _api.addMyselfToProject(project.id);
       }
 
-      // Start time on server
+      // Start new project
       final startSuccess = await _api.startTime(project.id);
       if (!startSuccess) {
         throw Exception('Failed to start time on server');
       }
 
-      // Switch local timer
-      final entry = await _timerService.switchProject(project);
-      state = entry;
-      _ref.read(activeTaskIdProvider.notifier).state = null;
+      state = ActiveSession(
+        id: 'pending',
+        projectId: project.id,
+        projectName: project.name,
+        startedAt: DateTime.now(),
+        isRunning: true,
+      );
 
-      // Update selected project
+      _ref.read(activeTaskIdProvider.notifier).state = null;
       _ref.read(selectedProjectProvider.notifier).state = project;
 
-      // Refresh projects to update total time
       await _ref.read(projectsProvider.notifier).refreshProjects();
 
       _logger.info('Switched to project: ${project.name}');
@@ -376,18 +494,16 @@ class CurrentTimerNotifier extends StateNotifier<TimeEntry?> {
     }
   }
 
-  // Check if timer is running
   bool get isRunning => state != null && state!.isRunning;
 
-  // Get current duration
   Duration get currentDuration {
     if (state == null) return Duration.zero;
-    return state!.actualDuration;
+    return state!.elapsedDuration;
   }
 
   @override
   void dispose() {
-    _timerSubscription?.cancel();
+    _stopUiRefreshTimer();
     _socketSubscription?.cancel();
     super.dispose();
   }
@@ -399,14 +515,14 @@ final isTimerRunningProvider = Provider<bool>((ref) {
   return timer != null && timer.isRunning;
 });
 
-// Current timer duration provider (project-level)
+// Current timer duration provider
 final currentTimerDurationProvider = Provider<Duration>((ref) {
   final timer = ref.watch(currentTimerProvider);
   if (timer == null) return Duration.zero;
-  return timer.actualDuration;
+  return timer.elapsedDuration;
 });
 
-// Current task duration provider (task-specific elapsed time)
+// Current task duration provider
 final currentTaskDurationProvider = Provider<Duration>((ref) {
   final timer = ref.watch(currentTimerProvider);
   if (timer == null || !timer.isRunning) return Duration.zero;
@@ -418,17 +534,10 @@ final currentTaskDurationProvider = Provider<Duration>((ref) {
   return DateTime.now().difference(taskStartTime);
 });
 
-// All time entries provider
-final allTimeEntriesProvider = Provider<List<TimeEntry>>((ref) {
-  final timerService = ref.watch(timerServiceProvider);
-  return timerService.getAllTimeEntries();
-});
-
-// Project time entries provider (for specific project)
-final projectTimeEntriesProvider = Provider.family<List<TimeEntry>, String>((ref, projectId) {
-  final timerService = ref.watch(timerServiceProvider);
-  return timerService.getProjectTimeEntries(projectId);
-});
-
-// Active task ID provider - separate state for proper reactivity
+// Active task ID provider
 final activeTaskIdProvider = StateProvider<String?>((ref) => null);
+
+// Legacy providers - kept for backward compatibility but return empty data
+// TODO: Remove these once all screens are migrated to use API data
+final allTimeEntriesProvider = Provider<List<dynamic>>((ref) => []);
+final projectTimeEntriesProvider = Provider.family<List<dynamic>, String>((ref, projectId) => []);

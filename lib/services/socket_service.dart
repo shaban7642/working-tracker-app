@@ -136,9 +136,17 @@ class SocketService {
       _logger.error('Socket reconnect error', error, null);
     });
 
+    // Listen to ALL events for debugging
+    _socket!.onAny((event, data) {
+      _logger.info('=== SOCKET ANY EVENT: $event ===');
+      _logger.info('Data: $data');
+    });
+
     // Time entry events
     _socket!.on('timeEntry:started', (data) {
+      _logger.info('=== SOCKET EVENT RECEIVED ===');
       _logger.info('Received timeEntry:started event: $data');
+      _logger.info('Event controller has listeners: ${_eventController.hasListener}');
       try {
         final payload = data is Map<String, dynamic>
             ? data

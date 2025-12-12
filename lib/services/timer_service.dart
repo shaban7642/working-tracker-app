@@ -52,7 +52,8 @@ class TimerService {
   }
 
   // Start timer for a project
-  Future<TimeEntry> startTimer(Project project) async {
+  // If startTime is provided (e.g., from socket event), use it instead of DateTime.now()
+  Future<TimeEntry> startTimer(Project project, {DateTime? startTime}) async {
     try {
       _logger.info('Starting timer for: ${project.name}');
 
@@ -62,13 +63,14 @@ class TimerService {
       }
 
       final now = DateTime.now();
+      final actualStartTime = startTime ?? now;
 
       // Create new time entry
       _currentEntry = TimeEntry(
         id: 'entry_${now.millisecondsSinceEpoch}',
         projectId: project.id,
         projectName: project.name,
-        startTime: now,
+        startTime: actualStartTime,
         isRunning: true,
       );
 
@@ -76,13 +78,13 @@ class TimerService {
       await _storage.saveTimeEntry(_currentEntry!);
 
       // Update project's lastActiveAt for sorting
-      final updatedProject = project.copyWith(lastActiveAt: now);
+      final updatedProject = project.copyWith(lastActiveAt: actualStartTime);
       await _projectService.updateProject(updatedProject);
 
       // Start internal timer
       _startInternalTimer();
 
-      _logger.info('Timer started for: ${project.name}');
+      _logger.info('Timer started for: ${project.name} at $actualStartTime');
       return _currentEntry!;
     } catch (e, stackTrace) {
       _logger.error('Failed to start timer', e, stackTrace);
