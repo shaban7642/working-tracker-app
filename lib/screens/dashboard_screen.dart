@@ -12,11 +12,13 @@ import '../providers/timer_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/window_provider.dart';
 import '../providers/navigation_provider.dart';
+import '../providers/attendance_provider.dart';
 import '../services/window_service.dart';
-import '../widgets/gradient_button.dart';
 import '../widgets/window_controls.dart';
 import '../widgets/inline_task_entry.dart';
 import '../widgets/task_chip.dart';
+import '../widgets/multi_project_task_dialog.dart';
+import '../models/project_with_time.dart';
 import 'login_screen.dart';
 import 'submission_form_screen.dart';
 import 'daily_reports_screen.dart';
@@ -33,6 +35,7 @@ class _DashboardScreenState
     extends ConsumerState<DashboardScreen> {
   bool _isHandlingNavigation = false;
   bool _hasCheckedOpenEntry = false;
+  bool _hasLoadedAttendance = false;
   bool _isLoading = false;
   String _searchQuery = '';
   String? _expandedTaskEntryProjectId;
@@ -45,6 +48,18 @@ class _DashboardScreenState
   void initState() {
     super.initState();
     _windowService.setDashboardWindowSize();
+    // Load attendance on init
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAttendanceOnce();
+    });
+  }
+
+  /// Load attendance data once
+  void _loadAttendanceOnce() {
+    if (!_hasLoadedAttendance) {
+      _hasLoadedAttendance = true;
+      ref.read(attendanceProvider.notifier).loadTodayAttendance();
+    }
   }
 
   /// Check for open entry once projects are loaded
@@ -173,6 +188,153 @@ class _DashboardScreenState
         }
       }
     }
+  }
+
+  /// Handle check-in action
+  Future<void> _handleCheckIn() async {
+    final attendance = ref.read(currentAttendanceProvider);
+
+    // Already checked in today
+    if (attendance?.hasCheckedIn == true) {
+      await context.showAlertDialog(
+        title: 'Already Checked In',
+        content: 'You have already checked in today at ${attendance!.formattedCheckIn}.',
+        confirmText: 'OK',
+      );
+      return;
+    }
+
+    // Confirm check-in
+    final confirmed = await context.showAlertDialog(
+      title: 'Check In',
+      content: 'Would you like to check in for today?',
+      confirmText: 'Check In',
+      cancelText: 'Later',
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        final success = await ref.read(attendanceProvider.notifier).recordBiometric();
+        if (success && mounted) {
+          context.showSuccessSnackBar('Checked in successfully');
+        }
+      } catch (e) {
+        if (mounted) {
+          context.showErrorSnackBar('Failed to check in: $e');
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    }
+  }
+
+  /// Handle check-out action
+  Future<void> _handleCheckOut() async {
+    final attendance = ref.read(currentAttendanceProvider);
+    final currentTimer = ref.read(currentTimerProvider);
+
+    // Must have checked in first
+    if (attendance?.hasCheckedIn != true) {
+      await context.showAlertDialog(
+        title: 'Cannot Check Out',
+        content: 'You need to check in first before checking out.',
+        confirmText: 'OK',
+      );
+      return;
+    }
+
+    // Show multi-project task dialog for all projects with time entries today
+    final result = await MultiProjectTaskDialog.showForCheckout(
+      context: context,
+    );
+
+    // User cancelled
+    if (result == null || !result.shouldProceed) return;
+
+    // Stop the timer if running
+    if (currentTimer != null) {
+      setState(() => _isLoading = true);
+      try {
+        await ref.read(currentTimerProvider.notifier).stopTimer();
+      } catch (e) {
+        if (mounted) {
+          context.showErrorSnackBar('Failed to stop timer: $e');
+        }
+      }
+    }
+
+    // Record check-out
+    setState(() => _isLoading = true);
+    try {
+      final success = await ref.read(attendanceProvider.notifier).recordBiometric();
+      if (success && mounted) {
+        context.showSuccessSnackBar('Checked out successfully');
+      }
+    } catch (e) {
+      if (mounted) {
+        context.showErrorSnackBar('Failed to check out: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Handle project start - check if there are existing time entries today needing tasks
+  /// Same logic as checkout, but only shows dialog if there ARE time entries
+  Future<bool> _handleProjectStart() async {
+    // Show multi-project task dialog for all projects with time entries today
+    // This is the same logic we run when we get an open event from the socket
+    final result = await MultiProjectTaskDialog.showForCheckout(
+      context: context,
+    );
+
+    // If dialog returned null (no projects with time entries), proceed
+    // If user cancelled, abort
+    // If user submitted all tasks, proceed
+    if (result == null) {
+      // No time entries today - proceed with starting project
+      return true;
+    }
+
+    return result.shouldProceed;
+  }
+
+  /// Handle project switch with task submission dialog
+  Future<bool> _handleProjectSwitch(Project newProject) async {
+    final currentTimer = ref.read(currentTimerProvider);
+
+    // If there's a running project, show task submit dialog first
+    if (currentTimer != null && currentTimer.projectId != newProject.id) {
+      // Get time for current project
+      final completedDurations = ref.read(completedProjectDurationsProvider);
+      final completedTime = completedDurations[currentTimer.projectId] ?? Duration.zero;
+      final totalTime = currentTimer.elapsedDuration + completedTime;
+
+      // Create ProjectWithTime for the current project
+      final projectWithTime = ProjectWithTime(
+        projectId: currentTimer.projectId,
+        projectName: currentTimer.projectName,
+        totalTimeWorked: totalTime,
+      );
+
+      final result = await MultiProjectTaskDialog.showForProjectSwitch(
+        context: context,
+        project: projectWithTime,
+      );
+
+      // User cancelled - abort switch
+      if (result == null) return false;
+
+      // User submitted - proceed with switch
+      return result.shouldProceed;
+    }
+
+    return true; // No active timer or same project
   }
 
   @override
@@ -348,33 +510,136 @@ class _DashboardScreenState
                 ),
                 const SizedBox(height: 12),
 
-                // Submit button (only show if there's time tracked)
-                if (sessionTotalTime.inSeconds > 0)
-                  GradientButton(
-                    onPressed: _handleSubmissionForm,
-                    height: 40,
-                    child: const Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.send,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Submit Report',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
+                // Check-In / Check-Out Card
+                Builder(
+                  builder: (context) {
+                    final attendance = ref.watch(currentAttendanceProvider);
+                    final isAttendanceLoading = ref.watch(isAttendanceLoadingProvider);
+                    final hasCheckedIn = attendance?.hasCheckedIn ?? false;
+
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.backgroundColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.borderColor),
+                      ),
+                      child: Row(
+                        children: [
+                          // Check-In section
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Check-In',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  attendance?.formattedCheckIn ?? '--',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: hasCheckedIn
+                                        ? AppTheme.successColor
+                                        : AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: isAttendanceLoading || hasCheckedIn
+                                        ? null
+                                        : _handleCheckIn,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: hasCheckedIn
+                                          ? AppTheme.successColor.withValues(alpha: 0.2)
+                                          : AppTheme.successColor,
+                                      foregroundColor: hasCheckedIn
+                                          ? AppTheme.successColor
+                                          : Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      hasCheckedIn ? 'Checked In' : 'Check In',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (sessionTotalTime.inSeconds > 0)
-                  const SizedBox(height: 12),
+                          const SizedBox(width: 12),
+                          // Divider
+                          Container(
+                            width: 1,
+                            height: 70,
+                            color: AppTheme.borderColor,
+                          ),
+                          const SizedBox(width: 12),
+                          // Check-Out section
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Check-Out',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  attendance?.formattedCheckOut ?? '--',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: attendance?.hasCheckedOut == true
+                                        ? AppTheme.primaryColor
+                                        : AppTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: isAttendanceLoading || !hasCheckedIn
+                                        ? null
+                                        : _handleCheckOut,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: hasCheckedIn
+                                          ? AppTheme.primaryColor
+                                          : AppTheme.borderColor,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Check Out',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
 
                 // Search bar
                 TextField(
@@ -781,6 +1046,18 @@ class _DashboardScreenState
                                                       // Already active or loading
                                                       return;
                                                     }
+
+                                                    // If switching projects, show task submit dialog for current project
+                                                    if (currentTimer != null) {
+                                                      final shouldProceed = await _handleProjectSwitch(project);
+                                                      if (!shouldProceed) return;
+                                                    } else {
+                                                      // Starting fresh - check if there are existing time entries today
+                                                      // that need task submission (same logic as checkout)
+                                                      final shouldProceed = await _handleProjectStart();
+                                                      if (!shouldProceed) return;
+                                                    }
+
                                                     setState(() => _isLoading = true);
                                                     try {
                                                       if (currentTimer != null) {

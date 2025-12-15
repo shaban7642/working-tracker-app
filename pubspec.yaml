@@ -54,6 +54,7 @@ dependencies:
 
   # HTTP client for API calls
   http: ^1.2.2
+  http_parser: ^4.0.2
 
   # Socket.IO client for real-time updates
   socket_io_client: ^2.0.3+1

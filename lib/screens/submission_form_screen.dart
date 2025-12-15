@@ -11,7 +11,6 @@ import '../core/utils/date_time_utils.dart';
 import '../models/project.dart';
 import '../models/task_submission.dart';
 import '../providers/auth_provider.dart';
-import '../providers/project_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/timer_provider.dart';
 import '../services/api_service.dart';
@@ -56,12 +55,21 @@ class _SubmissionFormScreenState
 
   void _initializeFormData() {
     _projectTasks = {};
-    // Get today's completed durations from API
+    // Get today's completed durations from API + active session
     final completedDurations = ref.read(completedProjectDurationsProvider);
+    final currentTimer = ref.read(currentTimerProvider);
+
+    // Merge completed durations with active session time
+    final allDurations = Map<String, Duration>.from(completedDurations);
+    if (currentTimer != null) {
+      final activeProjectId = currentTimer.projectId;
+      final activeTime = currentTimer.elapsedDuration;
+      allDurations[activeProjectId] = (allDurations[activeProjectId] ?? Duration.zero) + activeTime;
+    }
 
     // Initialize with tasks for each project that has time tracked today
     for (var project in widget.projects.where(
-      (p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0,
+      (p) => (allDurations[p.id]?.inSeconds ?? 0) > 0,
     )) {
       // Get pre-added tasks from the provider
       final preAddedTasks = ref.read(
@@ -371,15 +379,24 @@ class _SubmissionFormScreenState
       // Save current running task's duration before submission
       await ref.read(currentTimerProvider.notifier).saveCurrentTaskDuration();
 
+      // Get merged durations (completed + active session)
+      final completedDurations = ref.read(completedProjectDurationsProvider);
+      final currentTimer = ref.read(currentTimerProvider);
+      final allDurations = Map<String, Duration>.from(completedDurations);
+      if (currentTimer != null) {
+        final activeProjectId = currentTimer.projectId;
+        final activeTime = currentTimer.elapsedDuration;
+        allDurations[activeProjectId] = (allDurations[activeProjectId] ?? Duration.zero) + activeTime;
+      }
+
       // End time tracking on server for all projects being submitted
       final api = ApiService();
-      final completedDurations = ref.read(completedProjectDurationsProvider);
-      for (var project in widget.projects.where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)) {
+      for (var project in widget.projects.where((p) => (allDurations[p.id]?.inSeconds ?? 0) > 0)) {
         await api.endTime(project.id);
       }
 
       // Update form data with latest task durations from provider
-      for (var project in widget.projects.where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)) {
+      for (var project in widget.projects.where((p) => (allDurations[p.id]?.inSeconds ?? 0) > 0)) {
         final freshTasks = ref.read(projectTasksProvider(project.id));
         final formTasks = _projectTasks[project.id] ?? [];
 
@@ -410,7 +427,7 @@ class _SubmissionFormScreenState
       final List<TaskSubmission> allTasks = [];
 
       for (var project in widget.projects.where(
-        (p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0,
+        (p) => (allDurations[p.id]?.inSeconds ?? 0) > 0,
       )) {
         final tasks = _projectTasks[project.id] ?? [];
         for (var taskData in tasks) {
@@ -478,9 +495,19 @@ class _SubmissionFormScreenState
   Widget build(BuildContext context) {
     // Watch today's completed durations from API
     final completedDurations = ref.watch(completedProjectDurationsProvider);
+    // Also watch current active session
+    final currentTimer = ref.watch(currentTimerProvider);
+
+    // Merge completed durations with active session time
+    final allDurations = Map<String, Duration>.from(completedDurations);
+    if (currentTimer != null) {
+      final activeProjectId = currentTimer.projectId;
+      final activeTime = currentTimer.elapsedDuration;
+      allDurations[activeProjectId] = (allDurations[activeProjectId] ?? Duration.zero) + activeTime;
+    }
 
     final projectsWithTime = widget.projects
-        .where((p) => (completedDurations[p.id]?.inSeconds ?? 0) > 0)
+        .where((p) => (allDurations[p.id]?.inSeconds ?? 0) > 0)
         .toList();
 
     if (projectsWithTime.isEmpty) {
@@ -592,7 +619,7 @@ class _SubmissionFormScreenState
                               ),
                         ),
                         Text(
-                          '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} • ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime, completedDurations))}',
+                          '${projectsWithTime.length} project${projectsWithTime.length > 1 ? 's' : ''} • ${DateTimeUtils.formatDuration(_getTotalTime(projectsWithTime, allDurations))}',
                           style: TextStyle(
                             fontSize: 11,
                             color: AppTheme.textSecondary,
@@ -614,7 +641,7 @@ class _SubmissionFormScreenState
                     final project = projectsWithTime[projectIndex];
                     return _buildProjectCard(
                       project,
-                      completedDurations[project.id] ?? Duration.zero,
+                      allDurations[project.id] ?? Duration.zero,
                     );
                   },
                 ),

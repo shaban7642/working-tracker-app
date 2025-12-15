@@ -83,16 +83,12 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
   /// Start UI refresh timer to update elapsed time display every second
   void _startUiRefreshTimer() {
     _uiRefreshTimer?.cancel();
-    _logger.info('Starting UI refresh timer...');
     _uiRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (state != null && state!.isRunning) {
         // Create a new state object to trigger UI rebuild
-        final newState = state!.copyWith();
-        _logger.debug('UI refresh tick - elapsed: ${newState.elapsedDuration.inSeconds}s');
-        state = newState;
+        state = state!.copyWith();
       }
     });
-    _logger.info('UI refresh timer started');
   }
 
   /// Stop UI refresh timer
@@ -123,7 +119,18 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
       _logger.info('API Response - openEntry: $openEntry');
       _logger.info('API Response - todayEntries count: ${todayEntries.length}');
 
-      // Process today's completed entries to build completedProjectDurations
+      // Check if there's NO open entry - clear everything and show empty state
+      if (openEntry == null) {
+        _logger.info('No open entry on server - clearing all durations and state');
+        _ref.read(completedProjectDurationsProvider.notifier).state = {};
+        state = null;
+        _ref.read(selectedProjectProvider.notifier).state = null;
+        await _startSocketEventListener();
+        return;
+      }
+
+      // Open entry exists - process only CLOSED entries for completedProjectDurations
+      // The active project's time is handled separately via currentTimer.elapsedDuration
       final Map<String, Duration> completedDurations = {};
       for (final entry in todayEntries) {
         // Only count completed entries (have endedAt)
@@ -144,11 +151,12 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
         }
       }
 
-      // Update the completed durations provider
+      // Update the completed durations provider (only closed entries)
       _ref.read(completedProjectDurationsProvider.notifier).state = completedDurations;
-      _logger.info('Loaded ${completedDurations.length} completed project durations for today');
+      _logger.info('Loaded ${completedDurations.length} completed project durations for today (session active)');
 
-      if (openEntry != null) {
+      // Process the open entry to set active session
+      {
         _logger.info('Open entry found: $openEntry');
 
         // Extract project info from API response
@@ -232,24 +240,32 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
           state = null;
           _ref.read(selectedProjectProvider.notifier).state = null;
         }
-      } else {
-        // No open entry on server - clear everything
-        _logger.info('No open entry on server - clearing local state');
-        state = null;
-        _ref.read(selectedProjectProvider.notifier).state = null;
       }
 
       // Start listening to socket events for real-time updates
-      _startSocketEventListener();
+      await _startSocketEventListener();
     } catch (e, stackTrace) {
       _logger.error('Failed to sync open entry', e, stackTrace);
     }
   }
 
   /// Start listening to socket events for real-time updates
-  void _startSocketEventListener() {
+  Future<void> _startSocketEventListener() async {
     _socketSubscription?.cancel();
     _logger.info('Starting socket event listener...');
+
+    // Ensure socket is connected before listening
+    if (!_socketService.isConnected) {
+      _logger.info('Socket not connected, attempting to connect...');
+      try {
+        await _socketService.connect();
+        _logger.info('Socket connected successfully');
+      } catch (e) {
+        _logger.error('Failed to connect socket', e, null);
+        // Continue anyway - socket may connect later via reconnection
+      }
+    }
+
     _socketSubscription = _socketService.eventStream.listen(
       (event) {
         _logger.info('Socket event received: ${event.type} for ${event.projectName}');
@@ -262,60 +278,20 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
   }
 
   /// Handle incoming socket events
+  /// Instead of manually manipulating state, we re-sync from API
+  /// This ensures consistent behavior between app startup and socket events
   Future<void> _handleSocketEvent(TimeEntryEvent event) async {
     try {
-      _logger.info('Handling socket event: ${event.type} for project: ${event.projectName}');
+      _logger.info('Socket event received: ${event.type} for project: ${event.projectName}');
 
-      if (event.type == TimeEntryEventType.started) {
-        // Time entry started - update state with server data
-        state = ActiveSession(
-          id: event.id,
-          projectId: event.projectId,
-          projectName: event.projectName,
-          startedAt: event.startedAt,
-          isRunning: true,
-        );
+      // Re-sync state from API - this handles all the logic for:
+      // - Checking if there's an open entry
+      // - Calculating all durations for today
+      // - Setting the active session state
+      // - Clearing everything if no open entry
+      await checkAndSyncOpenEntry();
 
-        // Update selected project
-        final projects = _ref.read(projectsProvider).valueOrNull ?? [];
-        final project = projects.cast<Project?>().firstWhere(
-          (p) => p?.id == event.projectId,
-          orElse: () => null,
-        );
-        if (project != null) {
-          _ref.read(selectedProjectProvider.notifier).state = project;
-        }
-
-        // Start UI refresh timer
-        _startUiRefreshTimer();
-
-        _logger.info('Session started: ${event.projectName} at ${event.startedAt}');
-      } else if (event.type == TimeEntryEventType.ended) {
-        // Time entry ended - add duration to completed durations
-        if (event.duration != null && event.duration! > 0) {
-          final currentDurations = Map<String, Duration>.from(
-            _ref.read(completedProjectDurationsProvider),
-          );
-          final duration = Duration(seconds: event.duration!);
-          currentDurations[event.projectId] =
-              (currentDurations[event.projectId] ?? Duration.zero) + duration;
-          _ref.read(completedProjectDurationsProvider.notifier).state = currentDurations;
-          _logger.info('Added ${duration.inSeconds}s to completed durations for ${event.projectName}');
-        }
-
-        // Clear active session if it matches
-        if (state != null && state!.projectId == event.projectId) {
-          _stopUiRefreshTimer();
-          state = null;
-          _ref.read(activeTaskIdProvider.notifier).state = null;
-          _ref.read(selectedProjectProvider.notifier).state = null;
-
-          _logger.info('Session ended: ${event.projectName}');
-        }
-
-        // Refresh projects to update totals
-        await _ref.read(projectsProvider.notifier).refreshProjects();
-      }
+      _logger.info('State re-synced after socket event');
     } catch (e, stackTrace) {
       _logger.error('Failed to handle socket event', e, stackTrace);
     }

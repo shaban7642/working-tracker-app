@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'logger_service.dart';
 import 'storage_service.dart';
 
@@ -606,6 +608,170 @@ class ApiService {
       }
     } catch (e, stackTrace) {
       _logger.error('Error fetching daily reports', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // ATTENDANCE APIs
+  // ============================================================================
+
+  /// Get today's attendance record for current user
+  /// GET /attendance/my-attendance
+  Future<Map<String, dynamic>?> getMyAttendance() async {
+    try {
+      _logger.info('Fetching my attendance for today...');
+
+      final uri = Uri.parse('$baseUrl/attendance/my-attendance');
+      final response = await http.get(uri, headers: _headers);
+
+      _logger.info('My attendance response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['attendanceDay'] != null) {
+          _logger.info('Found attendance record: ${data['attendanceDay']}');
+          return data['attendanceDay'] as Map<String, dynamic>;
+        }
+        return null;
+      } else if (response.statusCode == 404) {
+        _logger.info('No attendance record for today');
+        return null;
+      } else if (response.statusCode == 401) {
+        _logger.error('Unauthorized - user may need to re-login', null, null);
+        throw Exception('Unauthorized - please login again');
+      } else {
+        _logger.warning('Failed to fetch attendance: ${response.statusCode}');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error fetching my attendance', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Record biometric attendance (check-in or check-out)
+  /// POST /attendance/record-biometric
+  /// First call creates a new record (check-in), subsequent calls add intervals (check-out)
+  Future<Map<String, dynamic>?> recordBiometric() async {
+    try {
+      _logger.info('Recording biometric attendance...');
+
+      final uri = Uri.parse('$baseUrl/attendance/record-biometric');
+      final response = await http.post(uri, headers: _headers);
+
+      _logger.info('Record biometric response: ${response.statusCode}');
+      _logger.info('Record biometric body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true && data['attendanceDay'] != null) {
+          _logger.info('Attendance recorded successfully');
+          return data['attendanceDay'] as Map<String, dynamic>;
+        }
+        return null;
+      } else if (response.statusCode == 401) {
+        _logger.error('Unauthorized - user may need to re-login', null, null);
+        throw Exception('Unauthorized - please login again');
+      } else {
+        _logger.error('Failed to record attendance: ${response.statusCode} - ${response.body}', null, null);
+        throw Exception('Failed to record attendance');
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error recording biometric attendance', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // DAILY REPORTS (Task Submission) APIs
+  // ============================================================================
+
+  /// Create a daily report (submit task)
+  /// POST /reports/daily-reports (multipart/form-data)
+  Future<Map<String, dynamic>?> createDailyReport({
+    required String projectId,
+    required String taskName,
+    required String taskDescription,
+    List<File>? attachments,
+  }) async {
+    try {
+      _logger.info('Creating daily report for project: $projectId');
+
+      final uri = Uri.parse('$baseUrl/reports/daily-reports');
+
+      // Create multipart request
+      final request = http.MultipartRequest('POST', uri);
+
+      // Add auth header
+      final user = _storage.getCurrentUser();
+      if (user?.token != null) {
+        request.headers['Authorization'] = 'Bearer ${user!.token}';
+      }
+
+      // Add form fields
+      request.fields['projectId'] = projectId;
+      request.fields['taskName'] = taskName;
+      request.fields['taskDescription'] = taskDescription;
+
+      // Add attachments if any
+      if (attachments != null && attachments.isNotEmpty) {
+        for (final file in attachments) {
+          final filename = file.path.split('/').last;
+          final extension = filename.split('.').last.toLowerCase();
+
+          // Determine MIME type
+          String mimeType;
+          switch (extension) {
+            case 'jpg':
+            case 'jpeg':
+              mimeType = 'image/jpeg';
+              break;
+            case 'png':
+              mimeType = 'image/png';
+              break;
+            case 'pdf':
+              mimeType = 'application/pdf';
+              break;
+            default:
+              mimeType = 'application/octet-stream';
+          }
+
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'taskAttachments',
+              file.path,
+              filename: filename,
+              contentType: MediaType.parse(mimeType),
+            ),
+          );
+        }
+        _logger.info('Added ${attachments.length} attachments');
+      }
+
+      // Send request
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      _logger.info('Create daily report response: ${response.statusCode}');
+      _logger.info('Create daily report body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          _logger.info('Daily report created successfully');
+          return data['dailyReport'] as Map<String, dynamic>?;
+        }
+        return null;
+      } else if (response.statusCode == 401) {
+        _logger.error('Unauthorized - user may need to re-login', null, null);
+        throw Exception('Unauthorized - please login again');
+      } else {
+        _logger.error('Failed to create daily report: ${response.statusCode} - ${response.body}', null, null);
+        throw Exception('Failed to submit task');
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error creating daily report', e, stackTrace);
       rethrow;
     }
   }
