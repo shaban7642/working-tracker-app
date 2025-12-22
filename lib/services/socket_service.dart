@@ -22,13 +22,29 @@ class SocketService {
   // Stream controller for broadcasting time entry events
   final _eventController = StreamController<TimeEntryEvent>.broadcast();
 
+  // Stream controller for token error events (for triggering token refresh)
+  final _tokenErrorController = StreamController<String>.broadcast();
+
   SocketService._internal();
 
   /// Stream of time entry events for providers to listen to
   Stream<TimeEntryEvent> get eventStream => _eventController.stream;
 
+  /// Stream of token error events for triggering token refresh
+  Stream<String> get tokenErrorStream => _tokenErrorController.stream;
+
   /// Whether the socket is currently connected
   bool get isConnected => _isConnected;
+
+  /// Check if an error message indicates a token error
+  bool _isTokenError(String message) {
+    final lowerMessage = message.toLowerCase();
+    return lowerMessage.contains('invalid or expired token') ||
+        lowerMessage.contains('jwt expired') ||
+        lowerMessage.contains('jwt malformed') ||
+        lowerMessage.contains('unauthorized') ||
+        lowerMessage.contains('token expired');
+  }
 
   /// Connect to the Socket.IO server with JWT authentication
   Future<void> connect() async {
@@ -136,10 +152,22 @@ class SocketService {
       _logger.error('Socket reconnect error', error, null);
     });
 
-    // Listen to ALL events for debugging
+    // Listen to ALL events for debugging and token error detection
     _socket!.onAny((event, data) {
       _logger.info('=== SOCKET ANY EVENT: $event ===');
       _logger.info('Data: $data');
+
+      // Check for token errors
+      if (event == 'error') {
+        final errorMessage = data is String
+            ? data
+            : (data is Map ? data['message']?.toString() : data?.toString()) ?? '';
+
+        if (_isTokenError(errorMessage)) {
+          _logger.warning('Token error detected in socket event: $errorMessage');
+          _tokenErrorController.add(errorMessage);
+        }
+      }
     });
 
     // Time entry events
@@ -197,5 +225,6 @@ class SocketService {
   void dispose() {
     disconnect();
     _eventController.close();
+    _tokenErrorController.close();
   }
 }

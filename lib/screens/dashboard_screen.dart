@@ -539,7 +539,7 @@ class _DashboardScreenState
     }
 
     return Scaffold(
-      backgroundColor: AppTheme.surfaceColor,
+      backgroundColor: AppTheme.backgroundColor,
       body: Stack(
         children: [
           Padding(
@@ -632,16 +632,20 @@ class _DashboardScreenState
                 ),
                 const SizedBox(height: 12),
 
-                // Timer display
+                // Timer display - Achievement style with gold border
                 Container(
                   padding: const EdgeInsets.symmetric(
                     vertical: 16,
                   ),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor.withValues(
-                      alpha: 0.1,
+                      alpha: 0.15,
                     ),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.5),
+                      width: 2,
+                    ),
                   ),
                   child: Column(
                     children: [
@@ -650,7 +654,7 @@ class _DashboardScreenState
                         DateTimeUtils.formatDuration(
                           sessionTotalTime,
                         ),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'monospace',
@@ -662,7 +666,7 @@ class _DashboardScreenState
                         const SizedBox(height: 4),
                         Text(
                           currentTimer.projectName,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 12,
                             color: AppTheme.textSecondary,
                           ),
@@ -686,7 +690,7 @@ class _DashboardScreenState
                     return Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.backgroundColor,
+                        color: AppTheme.surfaceColor,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: AppTheme.borderColor),
                       ),
@@ -842,12 +846,20 @@ class _DashboardScreenState
                           )
                         : null,
                     filled: true,
-                    fillColor: AppTheme.backgroundColor,
+                    fillColor: AppTheme.surfaceColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(
                         8,
                       ),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(color: AppTheme.borderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.borderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.primaryColor),
                     ),
                     contentPadding:
                         const EdgeInsets.symmetric(
@@ -1024,7 +1036,7 @@ class _DashboardScreenState
                                                           alpha: 0.15,
                                                         )
                                                   : AppTheme
-                                                        .backgroundColor,
+                                                        .surfaceColor,
                                               borderRadius:
                                                   BorderRadius.circular(
                                                     8,
@@ -1034,10 +1046,13 @@ class _DashboardScreenState
                                                   ? Border.all(
                                                       color: AppTheme.successColor.withValues(
                                                         alpha:
-                                                            0.4,
+                                                            0.5,
                                                       ),
+                                                      width: 1.5,
                                                     )
-                                                  : null,
+                                                  : Border.all(
+                                                      color: AppTheme.borderColor,
+                                                    ),
                                             ),
                                             child: Tooltip(
                                               message:
@@ -1436,7 +1451,7 @@ class _DashboardScreenState
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
                 child: Container(
-                  color: Colors.black.withValues(alpha: 0.3),
+                  color: Colors.black.withValues(alpha: 0.5),
                   child: const Center(
                     child: CircularProgressIndicator(
                       color: AppTheme.primaryColor,

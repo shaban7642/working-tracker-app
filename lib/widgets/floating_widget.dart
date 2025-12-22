@@ -624,10 +624,7 @@ class _FloatingWidgetState
           ),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.textPrimary.withValues(
-                alpha:
-                    FloatingWidgetConstants.shadowOpacity,
-              ),
+              color: Colors.black.withValues(alpha: 0.4),
               spreadRadius: 0,
               blurRadius:
                   FloatingWidgetConstants.shadowBlurRadius,
@@ -928,7 +925,7 @@ class _FloatingWidgetState
         borderRadius: BorderRadius.circular(4),
       ),
       textStyle: const TextStyle(
-        color: Colors.white,
+        color: Colors.black,
         fontSize: 11,
       ),
       child: child,
@@ -1120,10 +1117,18 @@ class _FloatingWidgetState
                 )
               : null,
           filled: true,
-          fillColor: AppTheme.backgroundColor,
+          fillColor: AppTheme.elevatedSurfaceColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
+            borderSide: const BorderSide(color: AppTheme.borderColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.borderColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.primaryColor),
           ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
@@ -1366,12 +1371,7 @@ class _FloatingWidgetState
                       ),
                       clipBehavior: Clip.hardEdge,
                       decoration: BoxDecoration(
-                        color: const Color.fromARGB(
-                          255,
-                          52,
-                          135,
-                          55,
-                        ),
+                        color: AppTheme.successColor,
                         borderRadius: BorderRadius.circular(
                           8,
                         ),

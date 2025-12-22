@@ -92,7 +92,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surfaceColor,
+      backgroundColor: AppTheme.backgroundColor,
       body: Stack(
         children: [
           SingleChildScrollView(
@@ -130,6 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     enabled: !_isLoading,
+                    style: const TextStyle(color: AppTheme.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Email Address',
                       hintText: 'your.email@example.com',
@@ -137,12 +138,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: AppTheme.textHint,
                         fontSize: 14,
                       ),
-                      prefixIcon: const Icon(Icons.email_outlined),
+                      prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.textSecondary),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.borderColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.borderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
                       ),
                       filled: true,
-                      fillColor: AppTheme.backgroundColor,
+                      fillColor: AppTheme.elevatedSurfaceColor,
                     ),
                     validator: Validators.validateEmail,
                   ),
@@ -154,6 +164,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
                     enabled: !_isLoading,
+                    style: const TextStyle(color: AppTheme.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Password',
                       hintText: 'Enter your password',
@@ -161,12 +172,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: AppTheme.textHint,
                         fontSize: 14,
                       ),
-                      prefixIcon: const Icon(Icons.lock_outlined),
+                      prefixIcon: const Icon(Icons.lock_outlined, color: AppTheme.textSecondary),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword
                               ? Icons.visibility_outlined
                               : Icons.visibility_off_outlined,
+                          color: AppTheme.textSecondary,
                         ),
                         onPressed: () {
                           setState(() {
@@ -176,9 +188,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.borderColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.borderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
                       ),
                       filled: true,
-                      fillColor: AppTheme.backgroundColor,
+                      fillColor: AppTheme.elevatedSurfaceColor,
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {

@@ -172,9 +172,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
+            colorScheme: ColorScheme.dark(
               primary: AppTheme.primaryColor,
-              onPrimary: Colors.white,
+              onPrimary: Color(0xFF121212),
               surface: AppTheme.surfaceColor,
               onSurface: AppTheme.textPrimary,
             ),
@@ -300,7 +300,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
         color: AppTheme.surfaceColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -587,7 +587,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),

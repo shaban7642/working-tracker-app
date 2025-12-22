@@ -93,10 +93,15 @@ class User extends HiveObject {
   // Create from API login response
   factory User.fromLoginResponse(Map<String, dynamic> json) {
     final user = json['user'] as Map<String, dynamic>;
+    final email = user['email'] as String;
+    // Build full name from firstName + lastName, fallback to email prefix
+    final firstName = user['firstName'] as String?;
+    final lastName = user['lastName'] as String?;
+    final name = _buildFullName(firstName, lastName) ?? email.split('@')[0];
     return User(
       id: user['id'] as String,
-      email: user['email'] as String,
-      name: (user['email'] as String).split('@')[0], // derive name from email
+      email: email,
+      name: name,
       token: json['accessToken'] as String?,
       createdAt: DateTime.now(),
       lastLoginAt: DateTime.now(),
@@ -105,6 +110,14 @@ class User extends HiveObject {
       additionalPermissions: (user['additionalPermissions'] as List<dynamic>?)?.cast<String>(),
       refreshToken: json['refreshToken'] as String?,
     );
+  }
+
+  /// Build full name from firstName and lastName
+  static String? _buildFullName(String? firstName, String? lastName) {
+    if (firstName == null && lastName == null) return null;
+    if (firstName == null) return lastName;
+    if (lastName == null) return firstName;
+    return '$firstName $lastName';
   }
 
   // Create from JSON (for local storage)

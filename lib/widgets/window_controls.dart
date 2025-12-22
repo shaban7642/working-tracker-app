@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
+import '../core/theme/app_theme.dart';
 
 /// Custom window control buttons (minimize, fullscreen, close)
 /// for Windows desktop app with hidden title bar.
@@ -115,7 +116,7 @@ class _WindowButtonState extends State<_WindowButton> {
               size: 16,
               color: _isHovered && widget.isClose
                   ? Colors.white
-                  : Colors.grey[700],
+                  : AppTheme.textSecondary,
             ),
           ),
         ),

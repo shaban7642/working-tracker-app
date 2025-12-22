@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/logger_service.dart';
 import '../services/socket_service.dart';
 import 'auth_provider.dart';
+import 'attendance_provider.dart';
 import 'project_provider.dart';
 import 'task_provider.dart';
 
@@ -242,6 +243,9 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
         }
       }
 
+      // Reload attendance to keep it in sync with timer state
+      await _ref.read(attendanceProvider.notifier).loadTodayAttendance();
+
       // Start listening to socket events for real-time updates
       await _startSocketEventListener();
     } catch (e, stackTrace) {
@@ -308,6 +312,13 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
   // Start timer for project (calls API)
   Future<void> startTimer(Project project) async {
     try {
+      // Auto check-in only if no attendance record exists for today
+      final attendance = _ref.read(currentAttendanceProvider);
+      if (attendance == null) {
+        _logger.info('No attendance record for today, auto checking in before starting timer...');
+        await _ref.read(attendanceProvider.notifier).recordBiometric();
+      }
+
       // If already running for another project, end it first
       if (state != null && state!.isRunning && state!.projectId != project.id) {
         await _api.endTime(state!.projectId);
@@ -337,6 +348,9 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
       _ref.read(activeTaskIdProvider.notifier).state = null;
       _ref.read(selectedProjectProvider.notifier).state = project;
       _startUiRefreshTimer();
+
+      // Reload attendance - starting a timer may auto check-in the user
+      await _ref.read(attendanceProvider.notifier).loadTodayAttendance();
 
       _logger.info('Timer started for: ${project.name}');
     } catch (e, stackTrace) {
@@ -369,6 +383,13 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
         return;
       }
 
+      // Auto check-in only if no attendance record exists for today
+      final attendance = _ref.read(currentAttendanceProvider);
+      if (attendance == null) {
+        _logger.info('No attendance record for today, auto checking in before starting timer with task...');
+        await _ref.read(attendanceProvider.notifier).recordBiometric();
+      }
+
       await saveCurrentTaskDuration();
 
       // Start or switch project
@@ -394,6 +415,9 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
         );
         _ref.read(selectedProjectProvider.notifier).state = project;
         _startUiRefreshTimer();
+
+        // Reload attendance - starting a timer may auto check-in the user
+        await _ref.read(attendanceProvider.notifier).loadTodayAttendance();
       }
 
       _ref.read(activeTaskIdProvider.notifier).state = taskId;

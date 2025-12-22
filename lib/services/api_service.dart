@@ -2,8 +2,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'auth_service.dart';
 import 'logger_service.dart';
 import 'storage_service.dart';
+
+/// Exception thrown when token refresh fails and user must be logged out
+class TokenExpiredException implements Exception {
+  final String message;
+  TokenExpiredException([this.message = 'Session expired. Please login again.']);
+
+  @override
+  String toString() => message;
+}
 
 /// Service for making API calls to the backend
 class ApiService {
@@ -13,6 +23,10 @@ class ApiService {
 
   final _logger = LoggerService();
   final _storage = StorageService();
+  final _authService = AuthService();
+
+  // Track if we're currently refreshing to prevent multiple refresh attempts
+  bool _isRefreshing = false;
 
   // API Configuration
   static const String baseUrl =
@@ -43,6 +57,81 @@ class ApiService {
     'Content-Type': 'application/json',
   };
   */
+
+  /// Make an HTTP request with automatic token refresh on 401
+  /// [method] - HTTP method: 'GET', 'POST', 'PUT', 'DELETE'
+  /// [uri] - The URI to request
+  /// [body] - Optional request body for POST/PUT
+  /// [retryOnUnauthorized] - Whether to retry after token refresh (default true)
+  Future<http.Response> _makeRequest({
+    required String method,
+    required Uri uri,
+    Map<String, dynamic>? body,
+    bool retryOnUnauthorized = true,
+  }) async {
+    http.Response response;
+
+    switch (method.toUpperCase()) {
+      case 'GET':
+        response = await http.get(uri, headers: _headers);
+        break;
+      case 'POST':
+        response = await http.post(
+          uri,
+          headers: _headers,
+          body: body != null ? json.encode(body) : null,
+        );
+        break;
+      case 'PUT':
+        response = await http.put(
+          uri,
+          headers: _headers,
+          body: body != null ? json.encode(body) : null,
+        );
+        break;
+      case 'DELETE':
+        response = await http.delete(uri, headers: _headers);
+        break;
+      default:
+        throw Exception('Unsupported HTTP method: $method');
+    }
+
+    // Handle 401 Unauthorized - attempt token refresh
+    if (response.statusCode == 401 && retryOnUnauthorized && !_isRefreshing) {
+      _logger.info('Received 401, attempting token refresh...');
+      _isRefreshing = true;
+
+      try {
+        final refreshSuccess = await _authService.refreshAccessToken();
+
+        if (refreshSuccess) {
+          _logger.info('Token refresh successful, retrying request...');
+          _isRefreshing = false;
+
+          // Retry the request with new token (don't retry again if it fails)
+          return _makeRequest(
+            method: method,
+            uri: uri,
+            body: body,
+            retryOnUnauthorized: false,
+          );
+        }
+      } catch (e) {
+        _logger.error('Token refresh failed, forcing logout', e, null);
+        _isRefreshing = false;
+        // Force logout when refresh fails
+        await _authService.forceLogout();
+        throw TokenExpiredException();
+      }
+
+      _isRefreshing = false;
+      // Force logout when refresh returns false
+      await _authService.forceLogout();
+      throw TokenExpiredException();
+    }
+
+    return response;
+  }
 
   /// Fetch information from the API (projects, departments, employees, settings)
   ///
@@ -113,7 +202,7 @@ class ApiService {
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
@@ -127,9 +216,6 @@ class ApiService {
           _logger.warning('Unexpected API response format for projects');
           return [];
         }
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.error('API request failed with status ${response.statusCode}', null, null);
         throw Exception('Failed to fetch projects: ${response.statusCode}');
@@ -416,7 +502,7 @@ class ApiService {
       _logger.info('Checking for open time entry...');
 
       final uri = Uri.parse('$baseUrl/projects/time-entries/open-entry');
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       _logger.info('Open entry response status: ${response.statusCode}');
       _logger.info('Open entry response body: ${response.body}');
@@ -451,16 +537,14 @@ class ApiService {
       } else if (response.statusCode == 404) {
         _logger.info('No open entry found (404)');
         return null;
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.warning('Failed to fetch open entry: ${response.statusCode}');
         return null;
       }
     } catch (e, stackTrace) {
       _logger.error('Error fetching open entry', e, stackTrace);
-      return null; // Don't rethrow - just return null on error
+      if (e is TokenExpiredException) rethrow;
+      return null; // Don't rethrow other errors - just return null
     }
   }
 
@@ -510,7 +594,7 @@ class ApiService {
 
       _logger.info('Fetching time entries from: $uri');
 
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       _logger.info('Time entries response status: ${response.statusCode}');
       _logger.info('Time entries response body: ${response.body}');
@@ -547,15 +631,13 @@ class ApiService {
 
         _logger.warning('No entries found in response: ${data.keys.toList()}');
         return [];
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.warning('Failed to fetch today\'s entries: ${response.statusCode} - ${response.body}');
         return [];
       }
     } catch (e, stackTrace) {
       _logger.error('Error fetching today\'s time entries', e, stackTrace);
+      if (e is TokenExpiredException) rethrow;
       return [];
     }
   }
@@ -584,7 +666,7 @@ class ApiService {
         queryParameters: queryParams,
       );
 
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
@@ -599,9 +681,6 @@ class ApiService {
           _logger.warning('API returned success: false');
           return {'reports': [], 'meta': {}};
         }
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.error('Failed to fetch daily reports: ${response.statusCode}', null, null);
         throw Exception('Failed to fetch reports: ${response.statusCode}');
@@ -623,7 +702,7 @@ class ApiService {
         queryParameters: {'date': dateStr},
       );
 
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
@@ -650,15 +729,13 @@ class ApiService {
           return null;
         }
         return null;
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.warning('Failed to fetch daily report by date: ${response.statusCode}');
         return null;
       }
     } catch (e, stackTrace) {
       _logger.error('Error fetching daily report by date', e, stackTrace);
+      if (e is TokenExpiredException) rethrow;
       return null;
     }
   }
@@ -674,7 +751,7 @@ class ApiService {
       _logger.info('Fetching my attendance for today...');
 
       final uri = Uri.parse('$baseUrl/attendance/my-attendance');
-      final response = await http.get(uri, headers: _headers);
+      final response = await _makeRequest(method: 'GET', uri: uri);
 
       _logger.info('My attendance response: ${response.statusCode}');
 
@@ -688,9 +765,6 @@ class ApiService {
       } else if (response.statusCode == 404) {
         _logger.info('No attendance record for today');
         return null;
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.warning('Failed to fetch attendance: ${response.statusCode}');
         return null;
@@ -709,7 +783,7 @@ class ApiService {
       _logger.info('Recording biometric attendance...');
 
       final uri = Uri.parse('$baseUrl/attendance/record-biometric');
-      final response = await http.post(uri, headers: _headers);
+      final response = await _makeRequest(method: 'POST', uri: uri);
 
       _logger.info('Record biometric response: ${response.statusCode}');
       _logger.info('Record biometric body: ${response.body}');
@@ -721,9 +795,6 @@ class ApiService {
           return data['attendanceDay'] as Map<String, dynamic>;
         }
         return null;
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
       } else {
         _logger.error('Failed to record attendance: ${response.statusCode} - ${response.body}', null, null);
         throw Exception('Failed to record attendance');
@@ -746,6 +817,23 @@ class ApiService {
     required String taskName,
     required String taskDescription,
     List<File>? attachments,
+  }) async {
+    return _createDailyReportWithRetry(
+      projectId: projectId,
+      taskName: taskName,
+      taskDescription: taskDescription,
+      attachments: attachments,
+      retryOnUnauthorized: true,
+    );
+  }
+
+  /// Internal method for creating daily report with retry support
+  Future<Map<String, dynamic>?> _createDailyReportWithRetry({
+    required String projectId,
+    required String taskName,
+    required String taskDescription,
+    List<File>? attachments,
+    required bool retryOnUnauthorized,
   }) async {
     try {
       _logger.info('Creating daily report for project: $projectId');
@@ -808,9 +896,33 @@ class ApiService {
           return data['dailyReport'] as Map<String, dynamic>?;
         }
         return null;
-      } else if (response.statusCode == 401) {
-        _logger.error('Unauthorized - user may need to re-login', null, null);
-        throw Exception('Unauthorized - please login again');
+      } else if (response.statusCode == 401 && retryOnUnauthorized && !_isRefreshing) {
+        _logger.info('Received 401 on createDailyReport, attempting token refresh...');
+        _isRefreshing = true;
+
+        try {
+          final refreshSuccess = await _authService.refreshAccessToken();
+          if (refreshSuccess) {
+            _logger.info('Token refresh successful, retrying createDailyReport...');
+            _isRefreshing = false;
+            return _createDailyReportWithRetry(
+              projectId: projectId,
+              taskName: taskName,
+              taskDescription: taskDescription,
+              attachments: attachments,
+              retryOnUnauthorized: false,
+            );
+          }
+        } catch (e) {
+          _logger.error('Token refresh failed, forcing logout', e, null);
+          _isRefreshing = false;
+          await _authService.forceLogout();
+          throw TokenExpiredException();
+        }
+
+        _isRefreshing = false;
+        await _authService.forceLogout();
+        throw TokenExpiredException();
       } else {
         _logger.error('Failed to create daily report: ${response.statusCode} - ${response.body}', null, null);
         throw Exception('Failed to submit task');

@@ -1,44 +1,30 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Colors
-  static const Color primaryColor = Color(0xFFa76d2a);
-  static const Color secondaryColor = Color(0xFFac8456);
-  static const Color errorColor = Color.fromARGB(
-    255,
-    255,
-    123,
-    121,
-  );
-  static const Color successColor = Color.fromARGB(
-    255,
-    52,
-    135,
-    55,
-  );
-  static const Color warningColor = Color.fromARGB(
-    255,
-    255,
-    218,
-    106,
-  );
+  // Colors - Dark Theme (matching mobile app)
+  static const Color primaryColor = Color(0xFFFFD54F); // Gold/Yellow accent
+  static const Color secondaryColor = Color(0xFFFFC107); // Amber
+  static const Color errorColor = Color(0xFFEF5350); // Red 400
+  static const Color successColor = Color(0xFF4CAF50); // Green 500
+  static const Color warningColor = Color(0xFFFFDA6A); // Yellow warning
 
-  // Gradient Colors
-  static const Color gradientStart = Color(0xFFa76d2a);
-  static const Color gradientEnd = Color(0xFFc99958);
+  // Gradient Colors - Gold gradient
+  static const Color gradientStart = Color(0xFFFFD54F);
+  static const Color gradientEnd = Color(0xFFFFC107);
 
-  // Text Colors
-  static const Color textPrimary = Color(0xFF000000);
-  static const Color textSecondary = Color(0xFF666666);
-  static const Color textHint = Colors.black38;
+  // Text Colors - Light text for dark theme
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textSecondary = Color(0xFFB0B0B0);
+  static const Color textHint = Color(0xFF666666);
 
-  // Background Colors
-  static const Color backgroundColor = Color(0xFFF5F5F5);
-  static const Color surfaceColor = Color(0xFFFFFFFF);
-  static const Color cardColor = Color(0xFFa76d2a);
+  // Background Colors - Dark theme
+  static const Color backgroundColor = Color(0xFF121212); // Main background
+  static const Color surfaceColor = Color(0xFF1E1E1E); // Cards, dialogs
+  static const Color elevatedSurfaceColor = Color(0xFF252525); // Elevated cards, inputs
+  static const Color cardColor = Color(0xFF252525);
 
-  // Border Colors
-  static const Color borderColor = Color(0xFFE0E0E0);
+  // Border Colors - Dark borders
+  static const Color borderColor = Color(0xFF2D2D2D);
 
   // Gradient
   static const LinearGradient primaryGradient =
@@ -48,29 +34,32 @@ class AppTheme {
         end: Alignment.bottomRight,
       );
 
-  // Light Theme
+  // Main Theme - Dark Theme (matching mobile app)
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
-    brightness: Brightness.light,
+    brightness: Brightness.dark,
     primaryColor: primaryColor,
     scaffoldBackgroundColor: backgroundColor,
-    colorScheme: const ColorScheme.light(
+    colorScheme: const ColorScheme.dark(
       primary: primaryColor,
       secondary: secondaryColor,
       error: errorColor,
       surface: surfaceColor,
+      onPrimary: Color(0xFF121212), // Dark text on gold buttons
+      onSurface: Color(0xFFFFFFFF),
+      onError: Colors.white,
     ),
 
     // AppBar Theme
     appBarTheme: const AppBarTheme(
-      backgroundColor: primaryColor,
-      foregroundColor: Colors.white,
+      backgroundColor: surfaceColor,
+      foregroundColor: textPrimary,
       elevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
         fontSize: 20,
         fontWeight: FontWeight.w600,
-        color: Colors.white,
+        color: textPrimary,
       ),
     ),
 
@@ -86,13 +75,13 @@ class AppTheme {
     // Input Decoration Theme
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: surfaceColor,
-      hintStyle: TextStyle(
-        color: Colors.grey[400],
+      fillColor: elevatedSurfaceColor,
+      hintStyle: const TextStyle(
+        color: textHint,
         fontSize: 14,
       ),
-      labelStyle: TextStyle(
-        color: Colors.grey[600],
+      labelStyle: const TextStyle(
+        color: textSecondary,
         fontSize: 14,
       ),
       floatingLabelStyle: const TextStyle(
@@ -128,7 +117,7 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
+        foregroundColor: Color(0xFF121212), // Dark text on gold
         padding: const EdgeInsets.symmetric(
           horizontal: 24,
           vertical: 12,
@@ -156,19 +145,22 @@ class AppTheme {
       color: textSecondary,
       size: 24,
     ),
-  );
 
-  // Dark Theme (for future use)
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    primaryColor: primaryColor,
-    scaffoldBackgroundColor: const Color(0xFF121212),
-    colorScheme: const ColorScheme.dark(
-      primary: primaryColor,
-      secondary: secondaryColor,
-      error: errorColor,
-      surface: Color(0xFF1E1E1E),
+    // Dialog Theme
+    dialogTheme: DialogThemeData(
+      backgroundColor: surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    ),
+
+    // Snackbar Theme
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: elevatedSurfaceColor,
+      contentTextStyle: TextStyle(color: textPrimary),
     ),
   );
+
+  // Dark Theme alias
+  static ThemeData darkTheme = lightTheme;
 }

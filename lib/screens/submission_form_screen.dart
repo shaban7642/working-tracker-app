@@ -167,7 +167,7 @@ class _SubmissionFormScreenState
               maxHeight: maxHeight,
             ),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppTheme.surfaceColor,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: AppTheme.borderColor,
@@ -512,7 +512,7 @@ class _SubmissionFormScreenState
 
     if (projectsWithTime.isEmpty) {
       return Scaffold(
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: AppTheme.backgroundColor,
         body: Padding(
           padding: const EdgeInsets.fromLTRB(
             16.0,
@@ -577,7 +577,7 @@ class _SubmissionFormScreenState
     }
 
     return Scaffold(
-      backgroundColor: AppTheme.surfaceColor,
+      backgroundColor: AppTheme.backgroundColor,
       body: Padding(
         padding: const EdgeInsets.fromLTRB(
           16.0,
@@ -697,8 +697,9 @@ class _SubmissionFormScreenState
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.backgroundColor,
+        color: AppTheme.surfaceColor,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -782,7 +783,7 @@ class _SubmissionFormScreenState
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: AppTheme.elevatedSurfaceColor,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppTheme.borderColor),
       ),
@@ -826,7 +827,7 @@ class _SubmissionFormScreenState
           // Task name field
           TextFormField(
             controller: taskData.taskNameController,
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
             decoration: InputDecoration(
               labelText: 'Task Name',
               labelStyle: const TextStyle(
@@ -840,6 +841,15 @@ class _SubmissionFormScreenState
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.primaryColor),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
@@ -847,7 +857,7 @@ class _SubmissionFormScreenState
               ),
               isDense: true,
               filled: true,
-              fillColor: AppTheme.backgroundColor,
+              fillColor: AppTheme.surfaceColor,
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -862,7 +872,7 @@ class _SubmissionFormScreenState
           // Task description field
           TextFormField(
             controller: taskData.taskDescController,
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
             decoration: InputDecoration(
               labelText: 'Description (Optional)',
               labelStyle: const TextStyle(
@@ -876,6 +886,15 @@ class _SubmissionFormScreenState
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: AppTheme.primaryColor),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
@@ -883,7 +902,7 @@ class _SubmissionFormScreenState
               ),
               isDense: true,
               filled: true,
-              fillColor: AppTheme.backgroundColor,
+              fillColor: AppTheme.surfaceColor,
             ),
             maxLines: 2,
           ),
