@@ -692,9 +692,11 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                             Positioned(
                               top: 4,
                               right: 4,
-                              child: GestureDetector(
-                                onTap: () => _removeAttachment(index),
-                                child: Container(
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onTap: () => _removeAttachment(index),
+                                  child: Container(
                                   width: 18,
                                   height: 18,
                                   decoration: BoxDecoration(
@@ -708,6 +710,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                                   ),
                                 ),
                               ),
+                              ),
                             ),
                           ],
                         );
@@ -719,9 +722,11 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
 
                 // File picker button
                 if (_attachments.length < maxFiles)
-                  GestureDetector(
-                    onTap: _pickFiles,
-                    child: Container(
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: _pickFiles,
+                      child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       decoration: BoxDecoration(
@@ -767,6 +772,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                         ],
                       ),
                     ),
+                  ),
                   ),
                 const SizedBox(height: 24),
 

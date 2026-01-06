@@ -43,10 +43,12 @@ class GradientButton extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: radius,
-          child: Container(
+        child: MouseRegion(
+          cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: radius,
+            child: Container(
             padding: padding ?? const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             alignment: Alignment.center,
             child: DefaultTextStyle(
@@ -61,6 +63,7 @@ class GradientButton extends StatelessWidget {
               ),
             ),
           ),
+        ),
         ),
       ),
     );

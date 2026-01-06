@@ -84,14 +84,16 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Main card content
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isExpanded = !_isExpanded;
+                });
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
@@ -235,27 +237,31 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
                   const SizedBox(width: 12),
 
                   // Play button
-                  GestureDetector(
-                    onTap: widget.isLoading ? null : widget.onStartTimer,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: widget.isActive
-                            ? AppTheme.successColor
-                            : const Color(0xFF2196F3),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        widget.isActive ? Icons.pause : Icons.play_arrow,
-                        color: Colors.white,
-                        size: 24,
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: widget.isLoading ? null : widget.onStartTimer,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: widget.isActive
+                              ? AppTheme.successColor
+                              : const Color(0xFF2196F3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          widget.isActive ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+          ),
           ),
 
           // Expanded section with tasks

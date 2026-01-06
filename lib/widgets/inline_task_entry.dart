@@ -102,19 +102,22 @@ class _InlineTaskEntryState extends State<InlineTaskEntry> {
             ),
           ),
           SizedBox(width: widget.isCompact ? 4 : 8),
-          InkWell(
-            onTap: _handleSubmit,
-            borderRadius: BorderRadius.circular(4),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppTheme.successColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Icon(
-                Icons.check,
-                size: iconSize,
-                color: AppTheme.successColor,
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: InkWell(
+              onTap: _handleSubmit,
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppTheme.successColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Icon(
+                  Icons.check,
+                  size: iconSize,
+                  color: AppTheme.successColor,
+                ),
               ),
             ),
           ),

@@ -92,15 +92,17 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header - Always visible
-          InkWell(
-            onTap: _toggleExpanded,
-            borderRadius: BorderRadius.vertical(
-              top: const Radius.circular(12),
-              bottom: _isExpanded ? Radius.zero : const Radius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: InkWell(
+              onTap: _toggleExpanded,
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(12),
+                bottom: _isExpanded ? Radius.zero : const Radius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                 children: [
                   // Expand/Collapse Icon
                   AnimatedRotation(
@@ -226,6 +228,7 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
               ),
             ),
           ),
+          ),
 
           // Expanded Content
           SizeTransition(
@@ -312,12 +315,15 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
                                   ),
                                   // Close button (only show if project has tasks)
                                   if (widget.project.hasTask)
-                                    GestureDetector(
-                                      onTap: () => setState(() => _showAddForm = false),
-                                      child: Icon(
-                                        Icons.close,
-                                        size: 18,
-                                        color: AppTheme.textSecondary,
+                                    MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _showAddForm = false),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 18,
+                                          color: AppTheme.textSecondary,
+                                        ),
                                       ),
                                     ),
                                 ],
@@ -344,10 +350,12 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
                         )
                       else
                         // Add New Task Button
-                        InkWell(
-                          onTap: () => setState(() => _showAddForm = true),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: InkWell(
+                            onTap: () => setState(() => _showAddForm = true),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
                               color: AppTheme.primaryColor.withValues(alpha: 0.1),
@@ -376,6 +384,7 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
                               ],
                             ),
                           ),
+                        ),
                         ),
                     ],
                   ),

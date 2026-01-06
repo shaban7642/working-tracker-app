@@ -74,15 +74,17 @@ class _FloatingProjectItemState extends ConsumerState<FloatingProjectItem> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Main row - tappable to expand
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
-              widget.onExpandChanged?.call(_isExpanded);
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isExpanded = !_isExpanded;
+                });
+                widget.onExpandChanged?.call(_isExpanded);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
               padding: const EdgeInsets.all(10),
               child: Row(
                 children: [
@@ -231,27 +233,31 @@ class _FloatingProjectItemState extends ConsumerState<FloatingProjectItem> {
                   const SizedBox(width: 8),
 
                   // Play button
-                  GestureDetector(
-                    onTap: widget.onStartTimer,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: widget.isActive
-                            ? AppTheme.successColor
-                            : const Color(0xFF2196F3),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        widget.isActive ? Icons.pause : Icons.play_arrow,
-                        color: Colors.white,
-                        size: 18,
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: widget.onStartTimer,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: widget.isActive
+                              ? AppTheme.successColor
+                              : const Color(0xFF2196F3),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          widget.isActive ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+          ),
           ),
 
           // Expanded task list

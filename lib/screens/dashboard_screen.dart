@@ -39,6 +39,7 @@ class _DashboardScreenState
   bool _hasLoadedAttendance = false;
   bool _hasSyncedTasks = false;
   bool _isLoading = false;
+  bool _isAttendanceExpanded = false;
   String _searchQuery = '';
   final TextEditingController _searchController =
       TextEditingController();
@@ -550,7 +551,18 @@ class _DashboardScreenState
                     final seconds = liveDuration.inSeconds.remainder(60);
                     final timeColor = isCurrentlyCheckedIn ? AppTheme.primaryColor : AppTheme.textPrimary;
 
-                    return Container(
+                    // Get periods for expanded view
+                    final periods = attendance?.periods ?? [];
+
+                    return MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isAttendanceExpanded = !_isAttendanceExpanded;
+                          });
+                        },
+                        child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: AppTheme.surfaceColor,
@@ -559,53 +571,69 @@ class _DashboardScreenState
                       ),
                       child: Column(
                         children: [
-                          // Total Worked Time (Live Counter) - on top
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Total Worked Today',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppTheme.textSecondary,
+                          // Header with expand/collapse icon
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                "Today's Attendance Time",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                              Icon(
+                                _isAttendanceExpanded
+                                    ? Icons.keyboard_arrow_up
+                                    : Icons.keyboard_arrow_down,
+                                size: 20,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Total Worked Time with clock icon
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 24,
+                                color: timeColor,
+                              ),
+                              const SizedBox(width: 8),
+                              if (isAttendanceLoading)
+                                const SizedBox(
+                                  height: 28,
+                                  width: 28,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              else
+                                RichText(
+                                  text: TextSpan(
+                                    style: TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.bold,
+                                      color: timeColor,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text: '${hours}h ${minutes.toString().padLeft(2, '0')}m ',
+                                        style: const TextStyle(fontSize: 24),
+                                      ),
+                                      TextSpan(
+                                        text: '${seconds.toString().padLeft(2, '0')}s',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: timeColor.withValues(alpha: 0.7),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                if (isAttendanceLoading)
-                                  const SizedBox(
-                                    height: 28,
-                                    width: 28,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                else
-                                  RichText(
-                                    text: TextSpan(
-                                      style: TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontWeight: FontWeight.bold,
-                                        color: timeColor,
-                                      ),
-                                      children: [
-                                        // Hours and minutes - large
-                                        TextSpan(
-                                          text: '${hours}h ${minutes.toString().padLeft(2, '0')}m ',
-                                          style: const TextStyle(fontSize: 24),
-                                        ),
-                                        // Seconds - smaller
-                                        TextSpan(
-                                          text: '${seconds.toString().padLeft(2, '0')}s',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: timeColor.withValues(alpha: 0.7),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
+                          const SizedBox(height: 8),
                           const Divider(height: 1, color: AppTheme.borderColor),
                           const SizedBox(height: 8),
                           // Check-In / Check-Out Times Row
@@ -691,6 +719,119 @@ class _DashboardScreenState
                               ),
                             ],
                           ),
+                          // Expanded periods list
+                          if (_isAttendanceExpanded && periods.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Divider(height: 1, color: AppTheme.borderColor),
+                            const SizedBox(height: 12),
+                            // Periods list - show most recent first
+                            ...periods.reversed.map((period) {
+                              final startTime = period.startTime.toLocal();
+                              final endTime = period.endTime?.toLocal();
+                              final duration = period.duration;
+                              final durationHours = duration.inHours;
+                              final durationMinutes = duration.inMinutes.remainder(60);
+
+                              String formattedDuration;
+                              if (durationHours > 0) {
+                                formattedDuration = '${durationHours}h ${durationMinutes}m';
+                              } else {
+                                formattedDuration = '${durationMinutes}m';
+                              }
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.backgroundColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.5)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    // In time
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'In',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            DateTimeUtils.formatTime(startTime),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppTheme.textPrimary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Arrow
+                                    Icon(
+                                      Icons.arrow_forward,
+                                      size: 16,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    // Out time
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            'Out',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            endTime != null ? DateTimeUtils.formatTime(endTime) : '--',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppTheme.textPrimary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Duration
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'Duration',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            formattedDuration,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF3B82F6), // Blue color
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
                           // Mobile check-in message when not checked in
                           if (!isCurrentlyCheckedIn && !isAttendanceLoading) ...[
                             const SizedBox(height: 8),
@@ -721,6 +862,8 @@ class _DashboardScreenState
                             ),
                           ],
                         ],
+                      ),
+                      ),
                       ),
                     );
                   },

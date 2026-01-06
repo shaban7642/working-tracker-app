@@ -130,33 +130,39 @@ class _TaskChipState extends State<TaskChip> {
             ),
             SizedBox(width: widget.isCompact ? 4 : 8),
             // Save button
-            InkWell(
-              onTap: _submitEdit,
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: AppTheme.successColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(
-                  Icons.check,
-                  size: widget.isCompact ? 18.0 : 20.0,
-                  color: AppTheme.successColor,
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                onTap: _submitEdit,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.successColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.check,
+                    size: widget.isCompact ? 18.0 : 20.0,
+                    color: AppTheme.successColor,
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: 4),
             // Cancel button
-            InkWell(
-              onTap: _cancelEditing,
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  Icons.close,
-                  size: widget.isCompact ? 18.0 : 20.0,
-                  color: AppTheme.textSecondary,
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                onTap: _cancelEditing,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.close,
+                    size: widget.isCompact ? 18.0 : 20.0,
+                    color: AppTheme.textSecondary,
+                  ),
                 ),
               ),
             ),
@@ -247,29 +253,35 @@ class _TaskChipState extends State<TaskChip> {
                       ),
                       // Edit button (hide when active to save space)
                       if (widget.onEdit != null && !widget.isActive)
-                        InkWell(
-                          onTap: _startEditing,
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.edit_outlined,
-                              size: iconSize,
-                              color: AppTheme.textSecondary,
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: InkWell(
+                            onTap: _startEditing,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.edit_outlined,
+                                size: iconSize,
+                                color: AppTheme.textSecondary,
+                              ),
                             ),
                           ),
                         ),
                       // Delete button (hide when active to save space)
                       if (widget.onDelete != null && !widget.isActive)
-                        InkWell(
-                          onTap: widget.onDelete,
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.close,
-                              size: iconSize,
-                              color: AppTheme.textSecondary,
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: InkWell(
+                            onTap: widget.onDelete,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.close,
+                                size: iconSize,
+                                color: AppTheme.textSecondary,
+                              ),
                             ),
                           ),
                         ),
@@ -289,23 +301,26 @@ class _TaskChipState extends State<TaskChip> {
                         alignment: Alignment.centerLeft,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 6),
-                          child: InkWell(
-                            onTap: widget.onActivate,
-                            borderRadius: BorderRadius.circular(6),
-                            child: Container(
-                              width: activateButtonWidth - 6,
-                              height: height - 4,
-                              decoration: BoxDecoration(
-                                color: AppTheme.successColor,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Start',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: widget.isCompact ? 10.0 : 11.0,
-                                    fontWeight: FontWeight.w600,
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: InkWell(
+                              onTap: widget.onActivate,
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                width: activateButtonWidth - 6,
+                                height: height - 4,
+                                decoration: BoxDecoration(
+                                  color: AppTheme.successColor,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Start',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: widget.isCompact ? 10.0 : 11.0,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),

@@ -928,9 +928,11 @@ class _FloatingWidgetState
 
   /// Builds the switch projects button
   Widget _buildDropdownArrow(List<dynamic> projects) {
-    return GestureDetector(
-      onTap: () => _toggleDropdown(projects.length),
-      child: AnimatedRotation(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => _toggleDropdown(projects.length),
+        child: AnimatedRotation(
         turns: _isExpanded
             ? 0.5
             : 0, // Rotate 180° when expanded
@@ -944,12 +946,15 @@ class _FloatingWidgetState
           size: 20,
         ),
       ),
+      ),
     );
   }
 
   /// Builds the maximize/restore button
   Widget _buildMaximizeButton() {
-    return InkWell(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
       onTap: _onMaximizeTap,
       child: Container(
         padding: const EdgeInsets.all(
@@ -960,6 +965,7 @@ class _FloatingWidgetState
           size: FloatingWidgetConstants.maximizeIconSize,
           color: AppTheme.textSecondary,
         ),
+      ),
       ),
     );
   }
