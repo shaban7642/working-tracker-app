@@ -136,11 +136,17 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
 
           if (projectId != null) {
             // Try to get duration from the entry, or calculate it from timestamps
-            Duration duration;
-            if (entry['duration'] != null && entry['duration'] is int && entry['duration'] > 0) {
-              duration = Duration(seconds: entry['duration'] as int);
-            } else {
-              // Calculate duration from startedAt and endedAt
+            Duration duration = Duration.zero;
+
+            // First try to get duration from the API field (handle both int and double)
+            final durationField = entry['duration'];
+            if (durationField != null && durationField is num && durationField > 0) {
+              duration = Duration(seconds: durationField.toInt());
+              _logger.info('Got duration from API field: ${durationField}s');
+            }
+
+            // If no duration field, calculate from timestamps
+            if (duration == Duration.zero) {
               final startedAtField = entry['startedAt'];
               final endedAtField = entry['endedAt'];
               DateTime? startedAt;
@@ -161,8 +167,9 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
               if (startedAt != null && endedAt != null) {
                 duration = endedAt.difference(startedAt);
                 if (duration.isNegative) duration = Duration.zero;
+                _logger.info('Calculated duration from timestamps: ${duration.inSeconds}s (start: $startedAt, end: $endedAt)');
               } else {
-                duration = Duration.zero;
+                _logger.warning('Could not calculate duration - startedAt: $startedAt, endedAt: $endedAt');
               }
             }
 
@@ -538,11 +545,16 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
           }
           if (projectId != null) {
             // Try to get duration from the entry, or calculate it from timestamps
-            Duration duration;
-            if (entry['duration'] != null && entry['duration'] is int && entry['duration'] > 0) {
-              duration = Duration(seconds: entry['duration'] as int);
-            } else {
-              // Calculate duration from startedAt and endedAt
+            Duration duration = Duration.zero;
+
+            // First try to get duration from the API field (handle both int and double)
+            final durationField = entry['duration'];
+            if (durationField != null && durationField is num && durationField > 0) {
+              duration = Duration(seconds: durationField.toInt());
+            }
+
+            // If no duration field, calculate from timestamps
+            if (duration == Duration.zero) {
               final startedAtField = entry['startedAt'];
               final endedAtField = entry['endedAt'];
               DateTime? startedAt;
@@ -563,8 +575,6 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
               if (startedAt != null && endedAt != null) {
                 duration = endedAt.difference(startedAt);
                 if (duration.isNegative) duration = Duration.zero;
-              } else {
-                duration = Duration.zero;
               }
             }
 

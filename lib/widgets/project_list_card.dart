@@ -59,6 +59,7 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
       context: context,
       projectId: widget.project.id,
       projectName: widget.project.name,
+      ref: ref,
     );
 
     if (result == true && mounted) {

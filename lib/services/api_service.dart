@@ -203,10 +203,25 @@ class ApiService {
         final data = json.decode(response.body) as Map<String, dynamic>;
 
         if (data['success'] == true && data.containsKey('projects') && data['projects'] is List) {
-          _logger.info('Successfully fetched ${(data['projects'] as List).length} projects from API');
-          return (data['projects'] as List)
+          final projects = (data['projects'] as List)
               .map((e) => e as Map<String, dynamic>)
               .toList();
+          _logger.info('Successfully fetched ${projects.length} projects from API');
+
+          // Debug logging: Log first project's full data to see all available fields
+          if (projects.isNotEmpty) {
+            _logger.info('FIRST PROJECT FULL DATA: ${projects.first}');
+          }
+          // Debug logging: Log each project's key fields
+          for (final project in projects) {
+            _logger.info('PROJECT API DATA: _id=${project['_id']}, name=${project['name']}, '
+                'duration=${project['duration']} (type: ${project['duration']?.runtimeType}), '
+                'lastActiveAt=${project['lastActiveAt']}, '
+                'todayTime=${project['todayTime']}, '
+                'totalTime=${project['totalTime']}');
+          }
+
+          return projects;
         } else {
           _logger.warning('Unexpected API response format for projects');
           return [];

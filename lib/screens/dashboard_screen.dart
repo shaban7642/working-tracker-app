@@ -156,6 +156,12 @@ class _DashboardScreenState
     String? activeProjectId,
     Map<String, Duration> completedDurations,
   ) {
+    // Debug logging for sorting
+    _logger.info('SORTING DEBUG: activeProjectId=$activeProjectId, completedDurations=${completedDurations.length} entries');
+    for (final entry in completedDurations.entries) {
+      _logger.info('COMPLETED DURATION: ${entry.key} -> ${entry.value.inSeconds}s');
+    }
+
     // First, filter by search query
     List<Project> filtered = projects;
 
@@ -176,7 +182,8 @@ class _DashboardScreenState
     // Sort projects:
     // 1. Active project first
     // 2. Projects with time today (sorted by duration, most time first)
-    // 3. Projects without time today (sorted by name)
+    // 3. Projects without time today (sorted by lastActiveAt, most recent first)
+    // 4. Fallback to name
     filtered.sort((a, b) {
       // Active project always first
       if (a.id == activeProjectId) return -1;
@@ -197,7 +204,17 @@ class _DashboardScreenState
         return bDuration.compareTo(aDuration); // Descending order
       }
 
-      // Neither has time today - sort by name
+      // Neither has time today - sort by lastActiveAt (most recent first)
+      final aLastActive = a.lastActiveAt;
+      final bLastActive = b.lastActiveAt;
+
+      if (aLastActive != null && bLastActive != null) {
+        return bLastActive.compareTo(aLastActive); // Descending order (most recent first)
+      }
+      if (aLastActive != null && bLastActive == null) return -1;
+      if (aLastActive == null && bLastActive != null) return 1;
+
+      // Fallback to name
       return a.name.compareTo(b.name);
     });
 

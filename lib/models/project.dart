@@ -128,7 +128,12 @@ class Project extends HiveObject {
     Duration parsedTotalTime = Duration.zero;
     try {
       // Try different possible field names and formats
-      if (json['totalTime'] != null) {
+      // The API may return 'duration' (today's time) or 'totalTime' (all-time total)
+      if (json['duration'] != null && json['duration'] is num && (json['duration'] as num) > 0) {
+        parsedTotalTime = Duration(seconds: (json['duration'] as num).toInt());
+      } else if (json['todayTime'] != null && json['todayTime'] is num && (json['todayTime'] as num) > 0) {
+        parsedTotalTime = Duration(seconds: (json['todayTime'] as num).toInt());
+      } else if (json['totalTime'] != null) {
         parsedTotalTime = Duration(seconds: (json['totalTime'] as num).toInt());
       } else if (json['total_time'] != null) {
         parsedTotalTime = Duration(seconds: (json['total_time'] as num).toInt());

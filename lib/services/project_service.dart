@@ -26,8 +26,13 @@ class ProjectService {
       final projects = projectsJson.map((json) {
         try {
           final project = Project.fromJson(json);
+          _logger.info('PARSED PROJECT: id=${project.id}, name=${project.name}, '
+              'totalTime=${project.totalTime.inSeconds}s, lastActiveAt=${project.lastActiveAt}');
           // Calculate total time from local time entries
-          return _enrichProjectWithLocalTime(project);
+          final enriched = _enrichProjectWithLocalTime(project);
+          _logger.info('ENRICHED PROJECT: id=${enriched.id}, name=${enriched.name}, '
+              'totalTime=${enriched.totalTime.inSeconds}s, lastActiveAt=${enriched.lastActiveAt}');
+          return enriched;
         } catch (e) {
           _logger.warning('Failed to parse project: $e');
           return null;

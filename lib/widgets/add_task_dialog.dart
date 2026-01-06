@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../core/theme/app_theme.dart';
+import '../core/extensions/context_extensions.dart';
 import '../providers/task_provider.dart';
 import '../providers/project_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/attendance_provider.dart';
 import '../services/report_submission_service.dart';
 import '../services/logger_service.dart';
 import '../models/task_submission.dart';
@@ -88,6 +90,7 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog> {
       context: context,
       projectId: widget.projectId,
       projectName: widget.projectName,
+      ref: ref,
     );
 
     if (result == true && mounted) {
@@ -241,11 +244,27 @@ class AddTaskSheet extends ConsumerStatefulWidget {
   });
 
   /// Show the bottom sheet
+  /// If ref is provided, will check for check-in status first
   static Future<bool?> show({
     required BuildContext context,
     required String projectId,
     required String projectName,
+    WidgetRef? ref,
   }) {
+    // Check if user is checked in (if ref is provided)
+    if (ref != null) {
+      final attendance = ref.read(currentAttendanceProvider);
+      final isCheckedIn = attendance?.isCurrentlyCheckedIn ?? false;
+
+      if (!isCheckedIn) {
+        context.showAlertDialog(
+          title: 'Check In Required',
+          content: 'Please check in from the mobile app first to add tasks.',
+        );
+        return Future.value(null);
+      }
+    }
+
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,

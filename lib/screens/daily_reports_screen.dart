@@ -768,10 +768,56 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     final projectName = project?['name'] ?? 'Unknown Project';
     final title = task['title'] ?? '';
     final description = task['description'] ?? '';
-    final images = (task['images'] as List?)
-            ?.map((e) => e as Map<String, dynamic>)
-            .toList() ??
-        [];
+
+    // Try multiple possible field names for images/attachments
+    List<Map<String, dynamic>> images = [];
+    if (task['images'] != null && task['images'] is List) {
+      images = (task['images'] as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+    } else if (task['attachments'] != null && task['attachments'] is List) {
+      images = (task['attachments'] as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+    }
+
+    // Time entry details
+    final timeEntry = task['timeEntry'] as Map<String, dynamic>?;
+    // Handle duration as num (can be int or double from API)
+    final durationField = timeEntry?['duration'];
+    final duration = durationField is num ? durationField.toInt() : 0;
+    final startedAt = timeEntry?['startedAt'] as String?;
+    final endedAt = timeEntry?['endedAt'] as String?;
+
+    // Format duration
+    String formattedDuration = '';
+    if (duration > 0) {
+      final hours = duration ~/ 3600;
+      final minutes = (duration % 3600) ~/ 60;
+      if (hours > 0) {
+        formattedDuration = '${hours}h ${minutes}m';
+      } else {
+        formattedDuration = '${minutes}m';
+      }
+    }
+
+    // Format time range
+    String timeRange = '';
+    if (startedAt != null) {
+      try {
+        final start = DateTime.parse(startedAt).toLocal();
+        final startTime = DateFormat('h:mm a').format(start);
+        if (endedAt != null) {
+          final end = DateTime.parse(endedAt).toLocal();
+          final endTime = DateFormat('h:mm a').format(end);
+          timeRange = '$startTime - $endTime';
+        } else {
+          timeRange = 'Started at $startTime';
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -802,25 +848,61 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Project badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7C6AFA).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          projectName.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF7C6AFA),
-                            letterSpacing: 0.5,
+                      // Project badge and time info row
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C6AFA).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              projectName.toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF7C6AFA),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                           ),
-                        ),
+                          const Spacer(),
+                          // Duration badge
+                          if (formattedDuration.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.successColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.timer_outlined,
+                                    size: 10,
+                                    color: AppTheme.successColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    formattedDuration,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.successColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 8),
 
@@ -834,37 +916,76 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         ),
                       ),
 
-                      // Description
+                      // Description - show full text without limit
                       if (description.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           description,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withValues(alpha: 0.7),
                             height: 1.4,
                           ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
 
-                      // Attachments
+                      // Time range info
+                      if (timeRange.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule,
+                              size: 12,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              timeRange,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
+                      // Attachments - larger thumbnails
                       if (images.isNotEmpty) ...[
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.attach_file,
+                              size: 12,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${images.length} attachment${images.length > 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         SizedBox(
-                          height: 50,
+                          height: 70,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
                             itemCount: images.length,
                             itemBuilder: (context, index) {
                               final image = images[index];
-                              final imageUrl = image['path'] as String? ?? '';
+                              // Try multiple possible field names for image URL
+                              final imageUrl = (image['path'] ?? image['url'] ?? image['uri'] ?? '') as String;
                               return GestureDetector(
                                 onTap: () => _showImagePreview(imageUrl),
                                 child: Container(
-                                  width: 50,
-                                  height: 50,
+                                  width: 70,
+                                  height: 70,
                                   margin: EdgeInsets.only(
                                     right: index < images.length - 1 ? 8 : 0,
                                   ),
@@ -884,7 +1005,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                           color: const Color(0xFF2A2A2A),
                                           child: Icon(
                                             Icons.image_not_supported,
-                                            size: 20,
+                                            size: 24,
                                             color: Colors.white.withValues(alpha: 0.3),
                                           ),
                                         );
@@ -895,8 +1016,8 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                           color: const Color(0xFF2A2A2A),
                                           child: Center(
                                             child: SizedBox(
-                                              width: 14,
-                                              height: 14,
+                                              width: 16,
+                                              height: 16,
                                               child: CircularProgressIndicator(
                                                 strokeWidth: 2,
                                                 color: AppTheme.successColor,
