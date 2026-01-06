@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:floating_widget_app/models/project.dart';
-import 'package:floating_widget_app/models/time_entry.dart';
+import 'package:silver_stone/models/project.dart';
+import 'package:silver_stone/models/time_entry.dart';
 
 void main() {
   group('TimeEntry Tests', () {

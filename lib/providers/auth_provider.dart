@@ -75,11 +75,11 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
-  /// Step 1 of 2FA login: Initiate login with email and password
+  /// Step 1 of 2FA login: Initiate login with email
   /// Returns loginSessionToken on success, throws on failure
-  Future<String> initiateLogin(String email, String password) async {
+  Future<String> initiateLogin(String email) async {
     try {
-      final token = await _authService.initiateLogin(email, password);
+      final token = await _authService.initiateLogin(email);
       _logger.info('Login initiated, OTP sent to email');
       return token;
     } catch (e, stackTrace) {
@@ -95,6 +95,8 @@ class CurrentUserNotifier extends StateNotifier<User?> {
       final user = await _authService.verifyLoginOTP(loginSessionToken, otp);
       state = user;
       _logger.info('User logged in via OTP: ${user.email}');
+      // Sync user profile to get full name from API
+      _syncUserProfile();
       return user;
     } catch (e, stackTrace) {
       _logger.error('OTP verification failed in provider', e, stackTrace);

@@ -368,7 +368,7 @@ class _OTPVerificationScreenState extends ConsumerState<OTPVerificationScreen> {
                   selectedColor: AppTheme.primaryColor,
                   errorBorderColor: AppTheme.errorColor,
                 ),
-                cursorColor: AppTheme.primaryColor,
+                cursorColor: Colors.white,
                 animationDuration: const Duration(milliseconds: 200),
                 enableActiveFill: true,
                 autoFocus: true,

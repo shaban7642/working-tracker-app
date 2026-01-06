@@ -5,7 +5,6 @@ import '../core/utils/validators.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
 import '../services/window_service.dart';
-import '../widgets/gradient_button.dart';
 import '../widgets/window_controls.dart';
 import 'dashboard_screen.dart';
 
@@ -19,11 +18,9 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _otpController = TextEditingController();
   final _windowService = WindowService();
   bool _isLoading = false;
-  bool _obscurePassword = true;
 
   // 2FA login state
   bool _isOtpStep = false;
@@ -39,7 +36,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void dispose() {
     _emailController.dispose();
-    _passwordController.dispose();
     _otpController.dispose();
     super.dispose();
   }
@@ -54,11 +50,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     final email = _emailController.text.trim();
-    final password = _passwordController.text;
 
     try {
       // Step 1: Initiate login (sends OTP to email)
-      final sessionToken = await ref.read(currentUserProvider.notifier).initiateLogin(email, password);
+      final sessionToken = await ref.read(currentUserProvider.notifier).initiateLogin(email);
 
       if (!mounted) return;
 
@@ -248,67 +243,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
+                borderSide: const BorderSide(color: Colors.white, width: 2),
               ),
               filled: true,
               fillColor: AppTheme.elevatedSurfaceColor,
             ),
             validator: Validators.validateEmail,
-          ),
-          const SizedBox(height: 16),
-
-          // Password Field
-          TextFormField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            textInputAction: TextInputAction.done,
-            enabled: !_isLoading,
-            style: const TextStyle(color: AppTheme.textPrimary),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              hintText: 'Enter your password',
-              hintStyle: const TextStyle(
-                color: AppTheme.textHint,
-                fontSize: 14,
-              ),
-              prefixIcon: const Icon(Icons.lock_outlined, color: AppTheme.textSecondary),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  color: AppTheme.textSecondary,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _obscurePassword = !_obscurePassword;
-                  });
-                },
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppTheme.borderColor),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppTheme.borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
-              ),
-              filled: true,
-              fillColor: AppTheme.elevatedSurfaceColor,
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your password';
-              }
-              if (value.length < 6) {
-                return 'Password must be at least 6 characters';
-              }
-              return null;
-            },
             onFieldSubmitted: (_) {
               if (!_isLoading) {
                 _handleLogin();
@@ -318,24 +258,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const SizedBox(height: 24),
 
           // Login Button
-          GradientButton(
-            onPressed: _isLoading ? null : _handleLogin,
-            child: _isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+          SizedBox(
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _handleLogin,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black,
+                      ),
+                    )
+                  : const Text(
+                      'Sign In',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  )
-                : const Text(
-                    'Sign In',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+            ),
           ),
         ],
       ),
@@ -381,7 +333,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Text(
           _email ?? '',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppTheme.primaryColor,
+                color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
           textAlign: TextAlign.center,
@@ -422,7 +374,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2),
+              borderSide: const BorderSide(color: Colors.white, width: 2),
             ),
             filled: true,
             fillColor: AppTheme.elevatedSurfaceColor,
@@ -436,24 +388,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const SizedBox(height: 24),
 
         // Verify Button
-        GradientButton(
-          onPressed: _isLoading ? null : _handleVerifyOTP,
-          child: _isLoading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
+        SizedBox(
+          height: 50,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _handleVerifyOTP,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+              disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.black,
+                    ),
+                  )
+                : const Text(
+                    'Verify & Sign In',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                )
-              : const Text(
-                  'Verify & Sign In',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+          ),
         ),
         const SizedBox(height: 16),
 
@@ -471,7 +435,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           child: Text(
             'Didn\'t receive the code? Try again',
             style: TextStyle(
-              color: _isLoading ? AppTheme.textHint : AppTheme.primaryColor,
+              color: _isLoading ? AppTheme.textHint : Colors.white,
             ),
           ),
         ),

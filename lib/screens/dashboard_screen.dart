@@ -156,12 +156,6 @@ class _DashboardScreenState
     String? activeProjectId,
     Map<String, Duration> completedDurations,
   ) {
-    // Debug logging for sorting
-    _logger.info('SORTING DEBUG: activeProjectId=$activeProjectId, completedDurations=${completedDurations.length} entries');
-    for (final entry in completedDurations.entries) {
-      _logger.info('COMPLETED DURATION: ${entry.key} -> ${entry.value.inSeconds}s');
-    }
-
     // First, filter by search query
     List<Project> filtered = projects;
 
@@ -222,22 +216,6 @@ class _DashboardScreenState
   }
 
   Future<void> _handleLogout() async {
-    // Check if there's an active session with accumulated time
-    final sessionTotalTime = ref.read(
-      sessionTotalTimeProvider,
-    );
-
-    if (sessionTotalTime.inSeconds > 0) {
-      // Block logout if there's active session time
-      await context.showAlertDialog(
-        title: 'Cannot Logout',
-        content:
-            'You have an active session with ${DateTimeUtils.formatDuration(sessionTotalTime)} of tracked time. Please submit your report before logging out.',
-        confirmText: 'OK',
-      );
-      return;
-    }
-
     final confirmed = await context.showAlertDialog(
       title: 'Logout',
       content: 'Are you sure you want to logout?',

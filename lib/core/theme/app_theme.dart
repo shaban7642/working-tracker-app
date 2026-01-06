@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   // Colors - Dark Theme (matching mobile app)
-  static const Color primaryColor = Color(0xFFFFD54F); // Gold/Yellow accent
+  static const Color primaryColor = Color(0xFFFFFFFF); // White
   static const Color secondaryColor = Color(0xFFFFC107); // Amber
   static const Color errorColor = Color(0xFFEF5350); // Red 400
   static const Color successColor = Color(0xFF4CAF50); // Green 500
   static const Color warningColor = Color(0xFFFFDA6A); // Yellow warning
 
-  // Gradient Colors - Gold gradient
-  static const Color gradientStart = Color(0xFFFFD54F);
-  static const Color gradientEnd = Color(0xFFFFC107);
+  // Gradient Colors - White gradient
+  static const Color gradientStart = Color(0xFFFFFFFF);
+  static const Color gradientEnd = Color(0xFFE0E0E0);
 
   // Text Colors - Light text for dark theme
   static const Color textPrimary = Color(0xFFFFFFFF);
@@ -53,7 +53,7 @@ class AppTheme {
       secondary: secondaryColor,
       error: errorColor,
       surface: surfaceColor,
-      onPrimary: Color(0xFF121212), // Dark text on gold buttons
+      onPrimary: Color(0xFF121212), // Dark text on white buttons
       onSurface: Color(0xFFFFFFFF),
       onError: Colors.white,
     ),
@@ -93,7 +93,7 @@ class AppTheme {
         fontSize: 14,
       ),
       floatingLabelStyle: const TextStyle(
-        color: primaryColor,
+        color: Colors.white,
         fontSize: 14,
       ),
       border: OutlineInputBorder(
@@ -107,7 +107,7 @@ class AppTheme {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(
-          color: primaryColor,
+          color: Colors.white,
           width: 2,
         ),
       ),
@@ -125,7 +125,7 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: primaryColor,
-        foregroundColor: Color(0xFF121212), // Dark text on gold
+        foregroundColor: Color(0xFF121212), // Dark text on white
         padding: const EdgeInsets.symmetric(
           horizontal: 24,
           vertical: 12,
@@ -166,6 +166,13 @@ class AppTheme {
     snackBarTheme: const SnackBarThemeData(
       backgroundColor: elevatedSurfaceColor,
       contentTextStyle: TextStyle(color: textPrimary),
+    ),
+
+    // Text Selection Theme - white cursor
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: Colors.white,
+      selectionColor: Color(0x40FFFFFF), // White with 25% opacity
+      selectionHandleColor: Colors.white,
     ),
   );
 

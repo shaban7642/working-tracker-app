@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
@@ -916,17 +917,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         ),
                       ),
 
-                      // Description - show full text without limit
+                      // Description - 3 lines max with "See more" button
                       if (description.isNotEmpty) ...[
                         const SizedBox(height: 6),
-                        Text(
-                          description,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.7),
-                            height: 1.4,
-                          ),
-                        ),
+                        _ExpandableDescription(description: description),
                       ],
 
                       // Time range info
@@ -1575,5 +1569,78 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
     }
 
     return Column(children: rows);
+  }
+}
+
+/// Expandable description widget with 3-line limit and "See more" button
+class _ExpandableDescription extends StatefulWidget {
+  final String description;
+
+  const _ExpandableDescription({required this.description});
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Create a text painter to check if text overflows
+        final textSpan = TextSpan(
+          text: widget.description,
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.white.withValues(alpha: 0.7),
+            height: 1.4,
+          ),
+        );
+        final textPainter = TextPainter(
+          text: textSpan,
+          maxLines: 3,
+          textDirection: ui.TextDirection.ltr,
+        );
+        textPainter.layout(maxWidth: constraints.maxWidth);
+
+        final isOverflowing = textPainter.didExceedMaxLines;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.description,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+              maxLines: _isExpanded ? null : 3,
+              overflow: _isExpanded ? null : TextOverflow.ellipsis,
+            ),
+            if (isOverflowing) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isExpanded = !_isExpanded;
+                  });
+                },
+                child: Text(
+                  _isExpanded ? 'See less' : 'See more',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF5B8AB5),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
   }
 }

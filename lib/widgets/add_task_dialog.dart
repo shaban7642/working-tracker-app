@@ -537,8 +537,9 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF7C6AFA),
+                      borderSide: BorderSide(
+                        color: AppTheme.primaryColor,
+                        width: 2,
                       ),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -593,8 +594,9 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF7C6AFA),
+                          borderSide: BorderSide(
+                            color: AppTheme.primaryColor,
+                            width: 2,
                           ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(

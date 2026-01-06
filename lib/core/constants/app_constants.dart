@@ -1,6 +1,6 @@
 class AppConstants {
   // App Info
-  static const String appName = 'Work Tracker';
+  static const String appName = 'Silver Stone';
   static const String appVersion = '1.0.0';
 
   // Window Settings

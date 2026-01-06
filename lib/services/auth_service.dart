@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import 'storage_service.dart';
@@ -13,7 +14,8 @@ class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
 
-  static const String _baseUrl = 'https://api.ssapp.site/api/v1';
+  static String get _baseUrl =>
+      dotenv.env['API_BASE_URL'] ?? 'https://api.ssapp.site/api/v1';
 
   final _storage = StorageService();
   final _logger = LoggerService();
@@ -30,20 +32,16 @@ class AuthService {
 
   AuthService._internal();
 
-  /// Step 1 of 2FA login: Initiate login with email and password
+  /// Step 1 of 2FA login: Initiate login with email
   /// Returns loginSessionToken on success, throws on failure
   /// The OTP will be sent to the user's registered email
-  Future<String> initiateLogin(String email, String password) async {
+  Future<String> initiateLogin(String email) async {
     try {
       _logger.info('Initiating login with email: $email');
 
       // Validate email format
       if (email.isEmpty || !_isValidEmail(email)) {
         throw Exception('Please enter a valid email address');
-      }
-
-      if (password.isEmpty || password.length < 6) {
-        throw Exception('Password must be at least 6 characters');
       }
 
       final response = await http.post(
@@ -53,7 +51,6 @@ class AuthService {
         },
         body: jsonEncode({
           'email': email,
-          'password': password,
         }),
       );
 
