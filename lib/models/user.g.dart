@@ -27,13 +27,14 @@ class UserAdapter extends TypeAdapter<User> {
       permissions: (fields[7] as List?)?.cast<String>(),
       additionalPermissions: (fields[8] as List?)?.cast<String>(),
       refreshToken: fields[9] as String?,
+      avatar: fields[10] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, User obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +54,9 @@ class UserAdapter extends TypeAdapter<User> {
       ..writeByte(8)
       ..write(obj.additionalPermissions)
       ..writeByte(9)
-      ..write(obj.refreshToken);
+      ..write(obj.refreshToken)
+      ..writeByte(10)
+      ..write(obj.avatar);
   }
 
   @override

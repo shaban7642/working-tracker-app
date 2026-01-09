@@ -95,8 +95,6 @@ class CurrentUserNotifier extends StateNotifier<User?> {
       final user = await _authService.verifyLoginOTP(loginSessionToken, otp);
       state = user;
       _logger.info('User logged in via OTP: ${user.email}');
-      // Sync user profile to get full name from API
-      _syncUserProfile();
       return user;
     } catch (e, stackTrace) {
       _logger.error('OTP verification failed in provider', e, stackTrace);

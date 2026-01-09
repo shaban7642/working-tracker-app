@@ -34,6 +34,9 @@ class User extends HiveObject {
   @HiveField(9)
   final String? refreshToken;
 
+  @HiveField(10)
+  final String? avatar;
+
   User({
     required this.id,
     required this.email,
@@ -45,6 +48,7 @@ class User extends HiveObject {
     this.permissions,
     this.additionalPermissions,
     this.refreshToken,
+    this.avatar,
   });
 
   // Copy with method for immutability
@@ -59,6 +63,7 @@ class User extends HiveObject {
     List<String>? permissions,
     List<String>? additionalPermissions,
     String? refreshToken,
+    String? avatar,
   }) {
     return User(
       id: id ?? this.id,
@@ -71,6 +76,7 @@ class User extends HiveObject {
       permissions: permissions ?? this.permissions,
       additionalPermissions: additionalPermissions ?? this.additionalPermissions,
       refreshToken: refreshToken ?? this.refreshToken,
+      avatar: avatar ?? this.avatar,
     );
   }
 
@@ -87,6 +93,7 @@ class User extends HiveObject {
       'permissions': permissions,
       'additionalPermissions': additionalPermissions,
       'refreshToken': refreshToken,
+      'avatar': avatar,
     };
   }
 
@@ -109,6 +116,7 @@ class User extends HiveObject {
       permissions: (user['permissions'] as List<dynamic>?)?.cast<String>(),
       additionalPermissions: (user['additionalPermissions'] as List<dynamic>?)?.cast<String>(),
       refreshToken: json['refreshToken'] as String?,
+      avatar: user['avatar'] as String?,
     );
   }
 
@@ -137,6 +145,7 @@ class User extends HiveObject {
       permissions: (json['permissions'] as List<dynamic>?)?.cast<String>(),
       additionalPermissions: (json['additionalPermissions'] as List<dynamic>?)?.cast<String>(),
       refreshToken: json['refreshToken'] as String?,
+      avatar: json['avatar'] as String?,
     );
   }
 
