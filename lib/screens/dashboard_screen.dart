@@ -482,12 +482,21 @@ class _DashboardScreenState
     }
 
     // Listen for attendance changes to trigger pending tasks check
+    // This handles both initial load and socket check-in events
     ref.listen(currentAttendanceProvider, (previous, next) {
-      if (next != null && next.isCurrentlyCheckedIn && !_hasCheckedPendingTasks) {
-        _logger.info('Attendance loaded and user is checked in, triggering pending tasks check');
+      final wasCheckedIn = previous?.isCurrentlyCheckedIn ?? false;
+      final isNowCheckedIn = next?.isCurrentlyCheckedIn ?? false;
+
+      // Trigger pending tasks check when:
+      // 1. User just checked in (transition from not checked in to checked in), OR
+      // 2. User was already checked in but we haven't checked pending tasks yet
+      if (isNowCheckedIn && (!wasCheckedIn || !_hasCheckedPendingTasks)) {
+        _logger.info('User checked in (wasCheckedIn=$wasCheckedIn, hasCheckedPending=$_hasCheckedPendingTasks), loading pending tasks');
+        _hasCheckedPendingTasks = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _checkPendingTasksOnce();
+            // Always reload pending tasks on check-in event (not just once)
+            ref.read(pendingTasksProvider.notifier).loadPendingEntries();
           }
         });
       }
