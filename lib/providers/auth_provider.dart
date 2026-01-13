@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
 import '../services/logger_service.dart';
+import '../services/token_refresh_coordinator.dart';
 
 // Auth service provider
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -23,11 +24,13 @@ class CurrentUserNotifier extends StateNotifier<User?> {
   final Ref _ref;
   late final AuthService _authService;
   late final LoggerService _logger;
+  late final TokenRefreshCoordinator _tokenCoordinator;
   StreamSubscription<void>? _forceLogoutSubscription;
 
   CurrentUserNotifier(this._ref) : super(null) {
     _authService = _ref.read(authServiceProvider);
     _logger = _ref.read(loggerServiceProvider);
+    _tokenCoordinator = TokenRefreshCoordinator();
     _loadUser();
     _listenForForceLogout();
   }
@@ -114,15 +117,15 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
-  /// Attempt to refresh the access token
+  /// Attempt to refresh the access token using the coordinator
   /// Returns true on success, false on failure
   Future<bool> refreshToken() async {
     try {
-      final success = await _authService.refreshAccessToken();
+      final success = await _tokenCoordinator.refreshToken();
       if (success) {
         // Reload user from storage to get updated tokens
         _loadUser();
-        _logger.info('Token refreshed, user state updated');
+        _logger.info('Token refreshed via coordinator, user state updated');
         return true;
       }
       return false;

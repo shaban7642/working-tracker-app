@@ -7,15 +7,13 @@ import 'package:screen_capturer/screen_capturer.dart';
 import '../core/theme/app_theme.dart';
 import '../core/extensions/context_extensions.dart';
 import '../providers/task_provider.dart';
-import '../providers/project_provider.dart';
-import '../providers/auth_provider.dart';
 import '../providers/attendance_provider.dart';
-import '../services/report_submission_service.dart';
 import '../services/logger_service.dart';
 import '../services/task_extractor_service.dart';
 import '../services/native_audio_recorder.dart';
-import '../models/task_submission.dart';
+import '../services/api_service.dart';
 import '../models/project_with_time.dart';
+import '../models/report_task.dart';
 
 /// Result from the add task dialog
 class AddTaskResult {
@@ -236,27 +234,49 @@ class _AddTaskDialogState extends ConsumerState<AddTaskDialog> {
   }
 }
 
-/// Bottom sheet for adding a task
+/// Bottom sheet for adding or editing a task
 class AddTaskSheet extends ConsumerStatefulWidget {
   final String projectId;
   final String projectName;
+  /// Optional: time entry IDs for pending tasks (to mark as submitted after)
+  /// For merged entries, this will contain all entry IDs.
+  final List<String>? entryIds;
+  /// Optional: report date for pending tasks
+  final DateTime? reportDate;
+  /// Callback when task is created (for pending tasks flow)
+  final void Function(Map<String, dynamic> task)? onTaskCreated;
+  /// Optional: task to edit (if provided, sheet is in edit mode)
+  final ReportTask? taskToEdit;
+  /// Callback when task is updated (for edit mode)
+  final void Function(ReportTask updatedTask)? onTaskUpdated;
 
   const AddTaskSheet({
     super.key,
     required this.projectId,
     required this.projectName,
+    this.entryIds,
+    this.reportDate,
+    this.onTaskCreated,
+    this.taskToEdit,
+    this.onTaskUpdated,
   });
 
-  /// Show the bottom sheet
+  /// Check if we're in edit mode
+  bool get isEditMode => taskToEdit != null;
+
+  /// Show the bottom sheet for adding a new task
   /// If ref is provided, will check for check-in status first
   static Future<bool?> show({
     required BuildContext context,
     required String projectId,
     required String projectName,
     WidgetRef? ref,
+    List<String>? entryIds,
+    DateTime? reportDate,
+    void Function(Map<String, dynamic> task)? onTaskCreated,
   }) {
-    // Check if user is checked in (if ref is provided)
-    if (ref != null) {
+    // Check if user is checked in (if ref is provided) - skip for pending tasks
+    if (ref != null && (entryIds == null || entryIds.isEmpty)) {
       final attendance = ref.read(currentAttendanceProvider);
       final isCheckedIn = attendance?.isCurrentlyCheckedIn ?? false;
 
@@ -276,6 +296,30 @@ class AddTaskSheet extends ConsumerStatefulWidget {
       builder: (context) => AddTaskSheet(
         projectId: projectId,
         projectName: projectName,
+        entryIds: entryIds,
+        reportDate: reportDate,
+        onTaskCreated: onTaskCreated,
+      ),
+    );
+  }
+
+  /// Show the bottom sheet for editing an existing task
+  static Future<bool?> showEdit({
+    required BuildContext context,
+    required String projectId,
+    required String projectName,
+    required ReportTask taskToEdit,
+    void Function(ReportTask updatedTask)? onTaskUpdated,
+  }) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AddTaskSheet(
+        projectId: projectId,
+        projectName: projectName,
+        taskToEdit: taskToEdit,
+        onTaskUpdated: onTaskUpdated,
       ),
     );
   }
@@ -306,6 +350,12 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
     super.initState();
     // Ensure always-on-top is disabled (in case it was left on from previous crash)
     _resetWindowState();
+
+    // If editing, populate fields with existing task data
+    if (widget.isEditMode && widget.taskToEdit != null) {
+      _titleController.text = widget.taskToEdit!.taskName;
+      _descriptionController.text = widget.taskToEdit!.taskDescription;
+    }
   }
 
   Future<void> _resetWindowState() async {
@@ -638,6 +688,65 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
     }
   }
 
+  /// Handle editing an existing task
+  Future<void> _handleEditTask(String taskName, String description) async {
+    final task = widget.taskToEdit!;
+
+    // Check if task has a reportId
+    if (task.reportId == null || task.reportId!.isEmpty) {
+      _showError('Cannot edit task: missing report ID');
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
+    // Check if anything changed
+    if (taskName == task.taskName && description == task.taskDescription) {
+      // No changes, just close
+      if (mounted) {
+        Navigator.of(context).pop(false);
+      }
+      return;
+    }
+
+    try {
+      // Update via API
+      final api = ApiService();
+      final updatedTaskData = await api.updateTask(
+        reportId: task.reportId!,
+        taskId: task.id,
+        taskName: taskName != task.taskName ? taskName : null,
+        taskDescription: description != task.taskDescription ? description : null,
+      );
+
+      if (updatedTaskData != null) {
+        // Create updated task object
+        final updatedTask = task.copyWith(
+          taskName: taskName,
+          taskDescription: description,
+        );
+
+        // Call the callback
+        if (widget.onTaskUpdated != null) {
+          widget.onTaskUpdated!(updatedTask);
+        }
+
+        _logger.info('Task updated: ${task.id}');
+
+        if (mounted) {
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        throw Exception('Failed to update task');
+      }
+    } catch (e) {
+      _logger.error('Failed to update task', e, null);
+      if (mounted) {
+        _showError('Failed to update task: $e');
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -654,43 +763,41 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
       final taskName = _titleController.text.trim();
       final description = _descriptionController.text.trim();
 
-      // Get project name
-      final projects = ref.read(projectsProvider).valueOrNull ?? [];
-      final project = projects.firstWhere(
-        (p) => p.id == widget.projectId,
-        orElse: () => projects.isNotEmpty
-            ? projects.first
-            : throw Exception('No projects found'),
-      );
-      final projectName = project.name;
+      // Handle edit mode
+      if (widget.isEditMode && widget.taskToEdit != null) {
+        await _handleEditTask(taskName, description);
+        return;
+      }
 
-      // Get user email
-      final user = ref.read(currentUserProvider);
-      final email = user?.email ?? '';
-
-      // Submit to API
-      final reportService = ReportSubmissionService();
-      final taskSubmission = TaskSubmission(
-        projectName: projectName,
+      // Use unified createTask API for all task creation
+      final api = ApiService();
+      final result = await api.createTask(
+        projectId: widget.projectId,
         taskName: taskName,
         taskDescription: description,
+        reportDate: widget.reportDate ?? DateTime.now(),
         attachmentPaths: attachmentPaths,
       );
 
-      final report = SessionReport(
-        email: email,
-        date: DateTime.now(),
-        orientation: 'l',
-        tasks: [taskSubmission],
-      );
-
-      final result = await reportService.submitReport(report);
-
-      if (result['success'] != true) {
-        throw Exception(result['message'] ?? 'Failed to submit task');
+      if (result == null) {
+        throw Exception('Failed to create task');
       }
 
-      // Also create a local task
+      _logger.info('Task created for project: ${widget.projectId}');
+
+      // If this is a pending task, mark time entries as submitted
+      final isPendingTask = widget.entryIds != null && widget.entryIds!.isNotEmpty;
+      if (isPendingTask) {
+        await api.markMultipleTimeEntriesSubmitted(widget.entryIds!);
+        _logger.info('Time entries marked as submitted');
+      }
+
+      // Call the callback with the created task data
+      if (widget.onTaskCreated != null) {
+        widget.onTaskCreated!(result);
+      }
+
+      // Also create a local task for tracking
       try {
         await ref.read(tasksProvider.notifier).createTask(
           projectId: widget.projectId,
@@ -699,8 +806,6 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
       } catch (e) {
         _logger.warning('Could not create local task: $e');
       }
-
-      _logger.info('Task submitted for project: ${widget.projectId}');
 
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -943,19 +1048,21 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                 ),
                 const SizedBox(height: 20),
 
-                // Attachments
-                const Text(
-                  'Attachments',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                // Attachments (only show when adding new task, not when editing)
+                if (!widget.isEditMode) ...[
+                  const Text(
+                    'Attachments',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
+                  const SizedBox(height: 8),
+                ],
 
-                // Attachment previews
-                if (_attachments.isNotEmpty) ...[
+                // Attachment previews (only when not in edit mode)
+                if (!widget.isEditMode && _attachments.isNotEmpty) ...[
                   SizedBox(
                     height: 70,
                     child: ListView.separated(
@@ -1044,8 +1151,8 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                   const SizedBox(height: 12),
                 ],
 
-                // File picker and Screenshot buttons
-                if (_attachments.length < maxFiles)
+                // File picker and Screenshot buttons (only when not in edit mode)
+                if (!widget.isEditMode && _attachments.length < maxFiles)
                   Row(
                     children: [
                       // File picker button
@@ -1141,7 +1248,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                       ),
                     ],
                   ),
-                if (_attachments.length < maxFiles)
+                if (!widget.isEditMode && _attachments.length < maxFiles)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -1153,7 +1260,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                const SizedBox(height: 24),
+                SizedBox(height: widget.isEditMode ? 16 : 24),
 
                 // Add Task button
                 SizedBox(
@@ -1179,9 +1286,9 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                               color: Colors.black,
                             ),
                           )
-                        : const Text(
-                            'Add Task',
-                            style: TextStyle(
+                        : Text(
+                            widget.isEditMode ? 'Save Changes' : 'Add Task',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),

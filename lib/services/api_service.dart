@@ -1,11 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
-import 'auth_service.dart';
 import 'logger_service.dart';
 import 'storage_service.dart';
+import 'token_refresh_coordinator.dart';
 
 /// Exception thrown when token refresh fails and user must be logged out
 class TokenExpiredException implements Exception {
@@ -24,10 +24,7 @@ class ApiService {
 
   final _logger = LoggerService();
   final _storage = StorageService();
-  final _authService = AuthService();
-
-  // Track if we're currently refreshing to prevent multiple refresh attempts
-  bool _isRefreshing = false;
+  final _tokenCoordinator = TokenRefreshCoordinator();
 
   // API Configuration - loaded from .env
   static String get baseUrl =>
@@ -54,7 +51,7 @@ class ApiService {
   */
 
   /// Make an HTTP request with automatic token refresh on 401
-  /// [method] - HTTP method: 'GET', 'POST', 'PUT', 'DELETE'
+  /// [method] - HTTP method: 'GET', 'POST', 'PUT', 'DELETE', 'PATCH'
   /// [uri] - The URI to request
   /// [body] - Optional request body for POST/PUT
   /// [retryOnUnauthorized] - Whether to retry after token refresh (default true)
@@ -87,41 +84,38 @@ class ApiService {
       case 'DELETE':
         response = await http.delete(uri, headers: _headers);
         break;
+      case 'PATCH':
+        response = await http.patch(
+          uri,
+          headers: _headers,
+          body: body != null ? json.encode(body) : null,
+        );
+        break;
       default:
         throw Exception('Unsupported HTTP method: $method');
     }
 
-    // Handle 401 Unauthorized - attempt token refresh
-    if (response.statusCode == 401 && retryOnUnauthorized && !_isRefreshing) {
-      _logger.info('Received 401, attempting token refresh...');
-      _isRefreshing = true;
+    // Handle 401 Unauthorized - attempt token refresh via coordinator
+    if (response.statusCode == 401 && retryOnUnauthorized) {
+      _logger.info('Received 401, attempting coordinated token refresh...');
 
-      try {
-        final refreshSuccess = await _authService.refreshAccessToken();
+      final refreshSuccess = await _tokenCoordinator.refreshToken();
 
-        if (refreshSuccess) {
-          _logger.info('Token refresh successful, retrying request...');
-          _isRefreshing = false;
+      if (refreshSuccess) {
+        _logger.info('Token refresh successful, retrying request...');
 
-          // Retry the request with new token (don't retry again if it fails)
-          return _makeRequest(
-            method: method,
-            uri: uri,
-            body: body,
-            retryOnUnauthorized: false,
-          );
-        }
-      } catch (e) {
-        _logger.error('Token refresh failed, forcing logout', e, null);
-        _isRefreshing = false;
-        // Force logout when refresh fails
-        await _authService.forceLogout();
-        throw TokenExpiredException();
+        // Retry the request with new token (don't retry again if it fails)
+        return _makeRequest(
+          method: method,
+          uri: uri,
+          body: body,
+          retryOnUnauthorized: false,
+        );
       }
 
-      _isRefreshing = false;
-      // Force logout when refresh returns false
-      await _authService.forceLogout();
+      // Refresh failed - force logout
+      _logger.error('Token refresh failed, forcing logout', null, null);
+      await _tokenCoordinator.forceLogout();
       throw TokenExpiredException();
     }
 
@@ -946,32 +940,25 @@ class ApiService {
           return data['dailyReport'] as Map<String, dynamic>?;
         }
         return null;
-      } else if (response.statusCode == 401 && retryOnUnauthorized && !_isRefreshing) {
-        _logger.info('Received 401 on createDailyReport, attempting token refresh...');
-        _isRefreshing = true;
+      } else if (response.statusCode == 401 && retryOnUnauthorized) {
+        _logger.info('Received 401 on createDailyReport, attempting coordinated token refresh...');
 
-        try {
-          final refreshSuccess = await _authService.refreshAccessToken();
-          if (refreshSuccess) {
-            _logger.info('Token refresh successful, retrying createDailyReport...');
-            _isRefreshing = false;
-            return _createDailyReportWithRetry(
-              projectId: projectId,
-              taskName: taskName,
-              taskDescription: taskDescription,
-              attachments: attachments,
-              retryOnUnauthorized: false,
-            );
-          }
-        } catch (e) {
-          _logger.error('Token refresh failed, forcing logout', e, null);
-          _isRefreshing = false;
-          await _authService.forceLogout();
-          throw TokenExpiredException();
+        final refreshSuccess = await _tokenCoordinator.refreshToken();
+
+        if (refreshSuccess) {
+          _logger.info('Token refresh successful, retrying createDailyReport...');
+          return _createDailyReportWithRetry(
+            projectId: projectId,
+            taskName: taskName,
+            taskDescription: taskDescription,
+            attachments: attachments,
+            retryOnUnauthorized: false,
+          );
         }
 
-        _isRefreshing = false;
-        await _authService.forceLogout();
+        // Refresh failed - force logout
+        _logger.error('Token refresh failed, forcing logout', null, null);
+        await _tokenCoordinator.forceLogout();
         throw TokenExpiredException();
       } else {
         _logger.error('Failed to create daily report: ${response.statusCode} - ${response.body}', null, null);
@@ -980,6 +967,480 @@ class ApiService {
     } catch (e, stackTrace) {
       _logger.error('Error creating daily report', e, stackTrace);
       rethrow;
+    }
+  }
+
+  // ========== PENDING TASKS API METHODS ==========
+
+  /// Get pending time entries for the current user.
+  /// Uses /projects/time-entries/my-pending endpoint which:
+  /// - Returns only entries with taskSubmitted = false
+  /// - Merges entries from the same day/project
+  /// - Returns entryIds array for merged entries
+  ///
+  /// GET /projects/time-entries/my-pending
+  Future<List<Map<String, dynamic>>> getPendingTimeEntries() async {
+    try {
+      final uri = Uri.parse('$baseUrl/projects/time-entries/my-pending');
+
+      _logger.info('Fetching pending time entries from: $uri');
+
+      final response = await _makeRequest(method: 'GET', uri: uri)
+          .timeout(const Duration(seconds: 15));
+
+      _logger.info('Pending entries response status: ${response.statusCode}');
+      _logger.info('Pending entries full body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Handle response format
+        List<dynamic> entries = [];
+        if (data is Map<String, dynamic>) {
+          _logger.info('Response is Map with keys: ${data.keys.toList()}');
+
+          // Check for pendingTimeEntries field first (new API format)
+          if (data['pendingTimeEntries'] != null && data['pendingTimeEntries'] is List) {
+            entries = data['pendingTimeEntries'] as List<dynamic>;
+            _logger.info('Found ${entries.length} entries in pendingTimeEntries field');
+          }
+          // Check for pendingTimeEntriesByProject (merged by project format)
+          else if (data['pendingTimeEntriesByProject'] != null &&
+                   data['pendingTimeEntriesByProject'] is List &&
+                   (data['pendingTimeEntriesByProject'] as List).isNotEmpty) {
+            entries = data['pendingTimeEntriesByProject'] as List<dynamic>;
+            _logger.info('Found ${entries.length} entries in pendingTimeEntriesByProject field');
+          }
+          // Fallback to other possible formats
+          else if (data['success'] == true && data['data'] != null && data['data'] is List) {
+            entries = data['data'] as List<dynamic>;
+            _logger.info('Found ${entries.length} entries in data field');
+          } else if (data['entries'] != null && data['entries'] is List) {
+            entries = data['entries'] as List<dynamic>;
+            _logger.info('Found ${entries.length} entries in entries field');
+          } else if (data['timeEntries'] != null && data['timeEntries'] is List) {
+            entries = data['timeEntries'] as List<dynamic>;
+            _logger.info('Found ${entries.length} entries in timeEntries field');
+          } else {
+            _logger.info('No pending entries found in response (count: ${data['count']})');
+          }
+        } else if (data is List) {
+          entries = data;
+          _logger.info('Response is a direct list with ${entries.length} items');
+        } else {
+          _logger.warning('Unexpected response type: ${data.runtimeType}');
+        }
+
+        _logger.info('Returning ${entries.length} pending time entries');
+        if (entries.isNotEmpty) {
+          _logger.info('First entry sample: ${entries.first}');
+        }
+        return entries.cast<Map<String, dynamic>>();
+      } else {
+        _logger.error('Failed to fetch pending entries: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to fetch pending time entries');
+      }
+    } on TimeoutException {
+      _logger.warning('Timeout fetching pending time entries');
+      rethrow;
+    } catch (e, stackTrace) {
+      _logger.error('Error fetching pending time entries', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Get tasks for a specific project and date for the current user.
+  /// Uses /reports/daily-reports/my-tasks endpoint which filters by date.
+  ///
+  /// GET /reports/daily-reports/my-tasks?projectId={projectId}&date={YYYY-MM-DD}
+  Future<List<Map<String, dynamic>>> getProjectTasks(String projectId, {String? date}) async {
+    try {
+      final queryParams = <String, String>{
+        'projectId': projectId,
+      };
+
+      // Add date filter if provided
+      if (date != null && date.isNotEmpty) {
+        queryParams['date'] = date;
+      }
+
+      final uri = Uri.parse('$baseUrl/reports/daily-reports/my-tasks').replace(
+        queryParameters: queryParams,
+      );
+
+      _logger.info('Fetching tasks for project: $projectId, date: $date from: $uri');
+
+      final response = await _makeRequest(method: 'GET', uri: uri)
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        List<Map<String, dynamic>> allTasks = [];
+
+        if (data is Map<String, dynamic> && data['success'] == true) {
+          // Response format: { success: true, tasks: [...] }
+          final tasks = data['tasks'] as List<dynamic>? ?? [];
+
+          for (final task in tasks) {
+            if (task is Map<String, dynamic>) {
+              final mapped = Map<String, dynamic>.from(task);
+
+              // Extract reportId from nested report object
+              final report = task['report'] as Map<String, dynamic>?;
+              if (report != null) {
+                mapped['reportId'] = report['_id'] as String?;
+                // Copy reportDate from report if present
+                if (report['reportDate'] != null) {
+                  mapped['reportDate'] = report['reportDate'];
+                }
+              }
+
+              // Extract projectId from nested project object if needed
+              final project = task['project'] as Map<String, dynamic>?;
+              if (project != null && mapped['projectId'] == null) {
+                mapped['projectId'] = project['_id'] as String?;
+              }
+
+              // Map title → taskName
+              if (mapped['title'] != null && mapped['taskName'] == null) {
+                mapped['taskName'] = mapped['title'];
+              }
+              // Map description → taskDescription
+              if (mapped['description'] != null && mapped['taskDescription'] == null) {
+                mapped['taskDescription'] = mapped['description'];
+              }
+              // Map images → taskAttachments
+              if (mapped['images'] != null && mapped['taskAttachments'] == null) {
+                final images = mapped['images'] as List<dynamic>? ?? [];
+                mapped['taskAttachments'] = images.map((img) {
+                  if (img is Map<String, dynamic>) {
+                    return img['path'] ?? '';
+                  }
+                  return img.toString();
+                }).toList();
+              }
+
+              _logger.info('Task ${mapped['_id']}: reportId=${mapped['reportId']}');
+              allTasks.add(mapped);
+            }
+          }
+        }
+
+        _logger.info('Fetched ${allTasks.length} tasks for project $projectId (date: $date)');
+        return allTasks;
+      } else if (response.statusCode == 404) {
+        _logger.info('No tasks found for project $projectId (404)');
+        return [];
+      } else {
+        _logger.error('Failed to fetch project tasks: ${response.statusCode} - ${response.body}');
+        return [];
+      }
+    } on TimeoutException {
+      _logger.warning('Timeout fetching tasks for project $projectId');
+      return [];
+    } catch (e, stackTrace) {
+      _logger.error('Error fetching project tasks', e, stackTrace);
+      return [];
+    }
+  }
+
+  /// Create a new task (daily report) for a project.
+  /// Used for both regular task creation and pending task submission.
+  ///
+  /// POST /reports/daily-reports
+  /// API expects: { tasks: [{ projectId, title, description, meta }], orientation? }
+  Future<Map<String, dynamic>?> createTask({
+    required String projectId,
+    required String taskName,
+    required String taskDescription,
+    required DateTime reportDate,
+    List<String>? attachmentPaths,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/reports/daily-reports');
+
+      // Format date as YYYY-MM-DD for the API
+      final dateStr = '${reportDate.year}-${reportDate.month.toString().padLeft(2, '0')}-${reportDate.day.toString().padLeft(2, '0')}';
+
+      _logger.info(
+          'Creating task for project: $projectId, name: $taskName, date: $dateStr');
+
+      // Build the task object as expected by API
+      final taskData = {
+        'projectId': projectId,
+        'title': taskName.isNotEmpty ? taskName : 'Work task',
+        'description': taskDescription.isNotEmpty ? taskDescription : 'Work task',
+        'meta': {},
+      };
+
+      // If no attachments, use simple JSON request
+      if (attachmentPaths == null || attachmentPaths.isEmpty) {
+        // API expects tasks array, orientation must be 'p' (portrait) or 'l' (landscape)
+        // reportDate links the task to the correct day
+        final response = await _makeRequest(
+          method: 'POST',
+          uri: uri,
+          body: {
+            'tasks': [taskData],
+            'orientation': 'p',
+            'reportDate': dateStr,
+          },
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          _logger.info('Task created successfully, response: $data');
+
+          // Extract the daily report - API uses 'report' key
+          final dailyReport = data['report'] as Map<String, dynamic>? ??
+                              data['dailyReport'] as Map<String, dynamic>?;
+          if (dailyReport != null) {
+            final reportId = dailyReport['_id'] as String?;
+            // If there's a task in the response, add the reportId to it
+            if (dailyReport['tasks'] != null && dailyReport['tasks'] is List) {
+              final tasks = dailyReport['tasks'] as List;
+              if (tasks.isNotEmpty) {
+                final lastTask = Map<String, dynamic>.from(tasks.last as Map);
+                lastTask['reportId'] = reportId;
+                // Map title/description to taskName/taskDescription for model compatibility
+                lastTask['taskName'] = lastTask['title'] ?? taskName;
+                lastTask['taskDescription'] = lastTask['description'] ?? taskDescription;
+                _logger.info('Created task with reportId: $reportId, task: $lastTask');
+                return lastTask;
+              }
+            }
+            // Return the daily report with _id as reportId
+            return dailyReport;
+          }
+          return data;
+        } else {
+          _logger.error('Failed to create task: ${response.statusCode} - ${response.body}');
+          throw Exception('Failed to create task: ${response.statusCode} - ${response.body}');
+        }
+      }
+
+      // With attachments, use multipart request
+      final request = http.MultipartRequest('POST', uri);
+
+      // Add authorization header
+      final user = _storage.getCurrentUser();
+      if (user?.token != null) {
+        request.headers['Authorization'] = 'Bearer ${user!.token}';
+      }
+
+      // Add tasks as JSON array (required by API)
+      // orientation must be 'p' (portrait) or 'l' (landscape)
+      // reportDate links the task to the correct day
+      request.fields['tasks'] = json.encode([taskData]);
+      request.fields['orientation'] = 'p';
+      request.fields['reportDate'] = dateStr;
+
+      // Add attachments - use taskAttachments_0 since this is for task at index 0
+      for (int i = 0; i < attachmentPaths.length; i++) {
+        final filePath = attachmentPaths[i];
+        final file = File(filePath);
+        if (await file.exists()) {
+          final originalName = file.path.split('/').last;
+          final lastDotIndex = originalName.lastIndexOf('.');
+          final extension =
+              lastDotIndex != -1 ? originalName.substring(lastDotIndex) : '';
+          final sanitizedFileName = 'attachment_0_$i$extension';
+
+          request.files.add(await http.MultipartFile.fromPath(
+            'taskAttachments_0', // Task index 0 attachments
+            filePath,
+            filename: sanitizedFileName,
+          ));
+          _logger.info('Added attachment: $sanitizedFileName');
+        }
+      }
+
+      // Send request
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        _logger.info('Task created successfully with attachments, response: $data');
+
+        // Extract the daily report - API uses 'report' key
+        final dailyReport = data['report'] as Map<String, dynamic>? ??
+                            data['dailyReport'] as Map<String, dynamic>?;
+        if (dailyReport != null) {
+          final reportId = dailyReport['_id'] as String?;
+          // If there's a task in the response, add the reportId to it
+          if (dailyReport['tasks'] != null && dailyReport['tasks'] is List) {
+            final tasks = dailyReport['tasks'] as List;
+            if (tasks.isNotEmpty) {
+              final lastTask = Map<String, dynamic>.from(tasks.last as Map);
+              lastTask['reportId'] = reportId;
+              // Map title/description to taskName/taskDescription for model compatibility
+              lastTask['taskName'] = lastTask['title'] ?? taskName;
+              lastTask['taskDescription'] = lastTask['description'] ?? taskDescription;
+              _logger.info('Created task with reportId: $reportId, task: $lastTask');
+              return lastTask;
+            }
+          }
+          // Return the daily report with _id as reportId
+          return dailyReport;
+        }
+        return data;
+      } else {
+        _logger.error(
+            'Failed to create task with attachments: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to create task: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error creating task', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Mark a single time entry as task submitted.
+  ///
+  /// PATCH /projects/time-entries/{timeEntryId}
+  Future<bool> markTimeEntryTaskSubmitted(String timeEntryId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/projects/time-entries/$timeEntryId');
+
+      _logger.info('Marking time entry as task submitted: $timeEntryId');
+
+      final response = await _makeRequest(
+        method: 'PATCH',
+        uri: uri,
+        body: {'taskSubmitted': true},
+      );
+
+      if (response.statusCode == 200) {
+        _logger.info('Time entry marked as submitted successfully');
+        return true;
+      } else {
+        _logger.error(
+            'Failed to mark time entry as submitted: ${response.statusCode}');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error marking time entry as submitted', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Mark multiple time entries as task submitted.
+  /// Used for merged entries where multiple time entries need to be updated.
+  ///
+  /// Returns true if ALL entries were successfully updated.
+  Future<bool> markMultipleTimeEntriesSubmitted(List<String> entryIds) async {
+    if (entryIds.isEmpty) return true;
+
+    _logger.info('Marking ${entryIds.length} time entries as submitted');
+
+    bool allSuccess = true;
+    for (final entryId in entryIds) {
+      try {
+        final success = await markTimeEntryTaskSubmitted(entryId);
+        if (!success) {
+          allSuccess = false;
+          _logger.warning('Failed to mark entry $entryId as submitted');
+        }
+      } catch (e) {
+        allSuccess = false;
+        _logger.error('Error marking entry $entryId as submitted: $e');
+      }
+    }
+
+    return allSuccess;
+  }
+
+  /// Mark a time entry (or merged entries) as NOT submitted.
+  /// Used when all tasks are deleted from an entry.
+  ///
+  /// PATCH /projects/time-entries/{timeEntryId}
+  Future<bool> markTimeEntryNotSubmitted(String timeEntryId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/projects/time-entries/$timeEntryId');
+
+      _logger.info('Marking time entry as NOT submitted: $timeEntryId');
+
+      final response = await _makeRequest(
+        method: 'PATCH',
+        uri: uri,
+        body: {'taskSubmitted': false},
+      );
+
+      if (response.statusCode == 200) {
+        _logger.info('Time entry marked as not submitted successfully');
+        return true;
+      } else {
+        _logger.error(
+            'Failed to mark time entry as not submitted: ${response.statusCode}');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error marking time entry as not submitted', e, stackTrace);
+      return false;
+    }
+  }
+
+  /// Delete a task from a daily report.
+  ///
+  /// DELETE /reports/daily-reports/{reportId}/tasks/{taskId}
+  Future<bool> deleteTask(String reportId, String taskId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/reports/daily-reports/$reportId/tasks/$taskId');
+
+      _logger.info('Deleting task: $taskId from report: $reportId');
+
+      final response = await _makeRequest(method: 'DELETE', uri: uri);
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        _logger.info('Task deleted successfully');
+        return true;
+      } else {
+        _logger.error('Failed to delete task: ${response.statusCode} - ${response.body}');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error deleting task', e, stackTrace);
+      return false;
+    }
+  }
+
+  /// Update a task in a daily report.
+  ///
+  /// PATCH /reports/daily-reports/{reportId}/tasks/{taskId}
+  Future<Map<String, dynamic>?> updateTask({
+    required String reportId,
+    required String taskId,
+    String? taskName,
+    String? taskDescription,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/reports/daily-reports/$reportId/tasks/$taskId');
+
+      _logger.info('Updating task: $taskId in report: $reportId');
+
+      final body = <String, dynamic>{};
+      if (taskName != null) body['title'] = taskName;
+      if (taskDescription != null) body['description'] = taskDescription;
+
+      final response = await _makeRequest(
+        method: 'PATCH',
+        uri: uri,
+        body: body,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        _logger.info('Task updated successfully');
+        return data['task'] as Map<String, dynamic>? ?? data;
+      } else {
+        _logger.error('Failed to update task: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _logger.error('Error updating task', e, stackTrace);
+      return null;
     }
   }
 }

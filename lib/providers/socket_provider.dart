@@ -4,7 +4,7 @@ import '../models/attendance_event.dart';
 import '../models/time_entry_event.dart';
 import '../services/socket_service.dart';
 import '../services/logger_service.dart';
-import 'auth_provider.dart';
+import '../services/token_refresh_coordinator.dart';
 
 // Socket service provider (singleton)
 final socketServiceProvider = Provider<SocketService>((ref) {
@@ -86,18 +86,22 @@ final tokenRefreshHandlerProvider = Provider<TokenRefreshHandler>((ref) {
 });
 
 /// Handles token refresh when socket receives token errors
+/// and proactively reconnects socket when token is refreshed elsewhere (e.g., API 401)
 class TokenRefreshHandler {
   final Ref _ref;
   final _logger = LoggerService();
+  final _tokenCoordinator = TokenRefreshCoordinator();
+
   StreamSubscription<String>? _tokenErrorSubscription;
-  bool _isRefreshing = false;
+  StreamSubscription<void>? _tokenRefreshedSubscription;
 
   TokenRefreshHandler(this._ref);
 
-  /// Start listening for token errors
+  /// Start listening for token errors and token refresh events
   void initialize() {
     final socketService = _ref.read(socketServiceProvider);
 
+    // Listen for socket token errors - trigger refresh
     _tokenErrorSubscription = socketService.tokenErrorStream.listen(
       (error) async {
         _logger.warning('Token error received from socket: $error');
@@ -105,46 +109,48 @@ class TokenRefreshHandler {
       },
     );
 
+    // Listen for external token refreshes (e.g., from API 401 handling)
+    // Proactively reconnect socket with new token
+    _tokenRefreshedSubscription = _tokenCoordinator.tokenRefreshedStream.listen(
+      (_) async {
+        _logger.info('Token refreshed externally, reconnecting socket...');
+        await _reconnectSocket();
+      },
+    );
+
     _logger.info('Token refresh handler initialized');
   }
 
-  /// Handle token error by attempting refresh
+  /// Handle token error by attempting coordinated refresh
   Future<void> _handleTokenError() async {
-    if (_isRefreshing) {
-      _logger.info('Already refreshing token, skipping');
-      return;
+    _logger.info('Attempting coordinated token refresh due to socket error...');
+
+    final success = await _tokenCoordinator.refreshToken();
+
+    if (success) {
+      await _reconnectSocket();
+    } else {
+      _logger.warning('Token refresh failed, forcing logout');
+      await _tokenCoordinator.forceLogout();
     }
+  }
 
-    _isRefreshing = true;
-
+  /// Reconnect socket with new token
+  Future<void> _reconnectSocket() async {
     try {
-      final authNotifier = _ref.read(currentUserProvider.notifier);
       final socketService = _ref.read(socketServiceProvider);
-
-      _logger.info('Attempting token refresh due to socket error...');
-      final success = await authNotifier.refreshToken();
-
-      if (success) {
-        _logger.info('Token refresh successful, reconnecting socket...');
-        await socketService.reconnect();
-        _ref.read(socketConnectedProvider.notifier).state = true;
-        _logger.info('Socket reconnected with new token');
-      } else {
-        _logger.warning('Token refresh failed, forcing logout');
-        await authNotifier.forceLogout();
-      }
+      await socketService.reconnect();
+      _ref.read(socketConnectedProvider.notifier).state = true;
+      _logger.info('Socket reconnected with new token');
     } catch (e, stackTrace) {
-      _logger.error('Error handling token refresh', e, stackTrace);
-      // Force logout on any error
-      await _ref.read(currentUserProvider.notifier).forceLogout();
-    } finally {
-      _isRefreshing = false;
+      _logger.error('Failed to reconnect socket', e, stackTrace);
     }
   }
 
   /// Dispose resources
   void dispose() {
     _tokenErrorSubscription?.cancel();
+    _tokenRefreshedSubscription?.cancel();
     _logger.info('Token refresh handler disposed');
   }
 }

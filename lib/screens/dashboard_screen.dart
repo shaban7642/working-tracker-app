@@ -20,9 +20,11 @@ import '../widgets/window_controls.dart';
 import '../widgets/multi_project_task_dialog.dart';
 import '../widgets/project_list_card.dart';
 import '../models/project_with_time.dart';
+import '../providers/pending_tasks_provider.dart';
 import 'login_screen.dart';
 import 'submission_form_screen.dart';
 import 'daily_reports_screen.dart';
+import 'pending_tasks_screen.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -38,6 +40,8 @@ class _DashboardScreenState
   bool _hasCheckedOpenEntry = false;
   bool _hasLoadedAttendance = false;
   bool _hasSyncedTasks = false;
+  bool _hasCheckedPendingTasks = false;
+  bool _isShowingPendingTasksScreen = false;
   bool _isLoading = false;
   bool _isAttendanceExpanded = false;
   String _searchQuery = '';
@@ -56,6 +60,12 @@ class _DashboardScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAttendanceOnce();
       _syncTasksFromApi();
+      // Check for pending tasks after a short delay to allow attendance to load
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkPendingTasksOnce();
+        }
+      });
     });
   }
 
@@ -140,6 +150,41 @@ class _DashboardScreenState
       _hasCheckedOpenEntry = true;
       // Check for open entry and start 1-minute polling
       ref.read(currentTimerProvider.notifier).checkAndSyncOpenEntry();
+    }
+  }
+
+  /// Check for pending tasks when user is checked in
+  void _checkPendingTasksOnce() {
+    if (_hasCheckedPendingTasks) return;
+
+    // Check if user is currently checked in
+    final attendance = ref.read(currentAttendanceProvider);
+    final isCheckedIn = attendance?.isCurrentlyCheckedIn ?? false;
+
+    _logger.info('Checking pending tasks: isCheckedIn=$isCheckedIn, attendance=$attendance');
+
+    if (isCheckedIn) {
+      _hasCheckedPendingTasks = true;
+      _logger.info('User is checked in, checking for pending tasks...');
+      ref.read(pendingTasksProvider.notifier).loadPendingEntries();
+    } else {
+      _logger.info('User is not checked in, skipping pending tasks check');
+    }
+  }
+
+  /// Show the pending tasks screen if there are pending entries
+  void _showPendingTasksScreenIfNeeded() {
+    if (_isShowingPendingTasksScreen) return;
+
+    final pendingState = ref.read(pendingTasksProvider);
+    if (pendingState is PendingTasksLoaded && pendingState.entries.isNotEmpty) {
+      _isShowingPendingTasksScreen = true;
+      _logger.info(
+          'Showing pending tasks screen with ${pendingState.entries.length} entries');
+
+      PendingTasksScreen.show(context).then((_) {
+        _isShowingPendingTasksScreen = false;
+      });
     }
   }
 
@@ -435,6 +480,34 @@ class _DashboardScreenState
         }
       });
     }
+
+    // Listen for attendance changes to trigger pending tasks check
+    ref.listen(currentAttendanceProvider, (previous, next) {
+      if (next != null && next.isCurrentlyCheckedIn && !_hasCheckedPendingTasks) {
+        _logger.info('Attendance loaded and user is checked in, triggering pending tasks check');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _checkPendingTasksOnce();
+          }
+        });
+      }
+    });
+
+    // Listen for pending tasks state changes and show screen when loaded
+    ref.listen<PendingTasksState>(pendingTasksProvider, (previous, next) {
+      _logger.info('Pending tasks state changed: $previous -> $next');
+      if (next is PendingTasksLoaded &&
+          next.entries.isNotEmpty &&
+          previous is! PendingTasksLoaded) {
+        // Show pending tasks screen when entries are loaded
+        _logger.info('Pending tasks loaded with ${next.entries.length} entries, showing screen');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showPendingTasksScreenIfNeeded();
+          }
+        });
+      }
+    });
 
     // Don't render dashboard when in floating mode to prevent AppBar overlay
     if (isFloatingMode) {
