@@ -78,6 +78,9 @@ dependencies:
   # Screenshot capture for desktop
   screen_capturer: ^0.2.2
 
+  # Image processing (PNG to JPEG conversion)
+  image: ^4.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

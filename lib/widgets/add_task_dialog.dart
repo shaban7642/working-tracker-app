@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_capturer/screen_capturer.dart';
+import 'package:image/image.dart' as img;
 import '../core/theme/app_theme.dart';
 import '../core/extensions/context_extensions.dart';
 import '../providers/task_provider.dart';
@@ -484,18 +485,25 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
       await windowManager.focus();
 
       if (capturedData != null && capturedData.imageBytes != null) {
+        // Convert PNG to JPEG for smaller file size
+        final image = img.decodeImage(capturedData.imageBytes!);
+        if (image == null) {
+          throw Exception('Failed to decode screenshot image');
+        }
+        final jpegBytes = img.encodeJpg(image, quality: 85);
+
         // Save to temp file
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final tempDir = Directory.systemTemp;
-        final screenshotPath = '${tempDir.path}/screenshot_$timestamp.png';
+        final screenshotPath = '${tempDir.path}/screenshot_$timestamp.jpg';
         final file = File(screenshotPath);
-        await file.writeAsBytes(capturedData.imageBytes!);
+        await file.writeAsBytes(jpegBytes);
 
         setState(() {
           _attachments.add(PlatformFile(
             path: screenshotPath,
-            name: 'screenshot_$timestamp.png',
-            size: capturedData.imageBytes!.length,
+            name: 'screenshot_$timestamp.jpg',
+            size: jpegBytes.length,
           ));
         });
 

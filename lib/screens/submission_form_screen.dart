@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_capturer/screen_capturer.dart';
+import 'package:image/image.dart' as img;
 import '../core/extensions/context_extensions.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
@@ -310,14 +311,21 @@ class _SubmissionFormScreenState
 
       if (capturedData != null &&
           capturedData.imageBytes != null) {
+        // Convert PNG to JPEG for smaller file size
+        final image = img.decodeImage(capturedData.imageBytes!);
+        if (image == null) {
+          throw Exception('Failed to decode screenshot image');
+        }
+        final jpegBytes = img.encodeJpg(image, quality: 85);
+
         // Save to temp file
         final timestamp =
             DateTime.now().millisecondsSinceEpoch;
         final tempDir = Directory.systemTemp;
         final screenshotPath =
-            '${tempDir.path}/screenshot_$timestamp.png';
+            '${tempDir.path}/screenshot_$timestamp.jpg';
         final file = File(screenshotPath);
-        await file.writeAsBytes(capturedData.imageBytes!);
+        await file.writeAsBytes(jpegBytes);
 
         setState(() {
           _projectTasks[projectId]![taskIndex].attachments
