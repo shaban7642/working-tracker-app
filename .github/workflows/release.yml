@@ -63,6 +63,12 @@ jobs:
         if: steps.check_release.outputs.EXISTS == 'false'
         run: flutter build windows --release
 
+      - name: Create ZIP archive
+        if: steps.check_release.outputs.EXISTS == 'false'
+        run: |
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "SilverStone-v${{ steps.version.outputs.VERSION }}-windows.zip"
+        shell: pwsh
+
       - name: Create Release
         if: steps.check_release.outputs.EXISTS == 'false'
         uses: softprops/action-gh-release@v1
@@ -75,9 +81,11 @@ jobs:
             Automated release from main branch.
 
             ### Download
-            Download the Windows executable below to update your app.
+            1. Download the ZIP file below
+            2. Extract to a folder
+            3. Run `silver_stone.exe`
           files: |
-            build/windows/x64/runner/Release/silver_stone.exe
+            SilverStone-v${{ steps.version.outputs.VERSION }}-windows.zip
           draft: false
           prerelease: false
         env:
