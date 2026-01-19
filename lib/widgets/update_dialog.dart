@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/app_version_info.dart';
 import '../providers/update_check_provider.dart';
 import '../core/theme/app_theme.dart';
-import '../core/constants/app_constants.dart';
+import '../services/app_info_service.dart';
 
 /// Dialog shown when an app update is available
 class UpdateDialog extends ConsumerWidget {
@@ -99,7 +99,7 @@ class UpdateDialog extends ConsumerWidget {
                       ),
                       const TextSpan(text: ' is available\n'),
                       TextSpan(
-                        text: 'Current: ${AppConstants.appVersion}',
+                        text: 'Current: ${AppInfoService().version}',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ],

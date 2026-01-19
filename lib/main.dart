@@ -9,6 +9,7 @@ import 'services/storage_service.dart';
 import 'services/timer_service.dart';
 import 'services/logger_service.dart';
 import 'services/auth_service.dart';
+import 'services/app_info_service.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -25,6 +26,11 @@ void main(List<String> args) async {
     // Load environment variables
     await dotenv.load(fileName: '.env');
     logger.info('Environment variables loaded');
+
+    // Initialize app info service (for version checks)
+    final appInfo = AppInfoService();
+    await appInfo.initialize();
+    logger.info('App info initialized: v${appInfo.version}');
 
     // Initialize storage service first (needed to check login state)
     final storage = StorageService();

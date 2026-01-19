@@ -84,6 +84,9 @@ dependencies:
   # Image processing (PNG to JPEG conversion)
   image: ^4.3.0
 
+  # App version info from pubspec
+  package_info_plus: ^8.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

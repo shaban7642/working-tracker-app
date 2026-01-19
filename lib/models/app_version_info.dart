@@ -1,4 +1,4 @@
-import '../core/constants/app_constants.dart';
+import '../services/app_info_service.dart';
 
 /// Model for app version information from GitHub releases
 class AppVersionInfo {
@@ -18,15 +18,18 @@ class AppVersionInfo {
     this.releaseDate,
   });
 
+  /// Get current app version from AppInfoService
+  static String get _currentVersion => AppInfoService().version;
+
   /// Check if an update is available by comparing versions
   bool get isUpdateAvailable {
-    return _compareVersions(latestVersion, AppConstants.appVersion) > 0;
+    return _compareVersions(latestVersion, _currentVersion) > 0;
   }
 
   /// Check if this is a force update (current version below minimum)
   bool get forceUpdate {
     if (minimumVersion == null) return false;
-    return _compareVersions(minimumVersion!, AppConstants.appVersion) > 0;
+    return _compareVersions(minimumVersion!, _currentVersion) > 0;
   }
 
   /// Compare two semantic versions
