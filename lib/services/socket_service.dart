@@ -14,7 +14,7 @@ class SocketService {
   final _storage = StorageService();
 
   // Socket.IO server URL (same as API base, without /api/v1)
-  static const String _socketUrl = 'https://api.ssapp.site';
+  static const String _socketUrl = 'https://app.ssarchitects.ae';
 
   io.Socket? _socket;
   bool _isConnected = false;

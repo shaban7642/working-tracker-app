@@ -215,13 +215,20 @@ class TasksNotifier extends StateNotifier<AsyncValue<List<Task>>> {
   }
 }
 
-// Provider for tasks filtered by project
+// Provider for tasks filtered by project and current day
 final projectTasksProvider =
     Provider.family<List<Task>, String>((ref, projectId) {
   final tasksAsync = ref.watch(tasksProvider);
+  final now = DateTime.now();
 
   return tasksAsync.whenOrNull(
-        data: (tasks) => tasks.where((t) => t.projectId == projectId).toList(),
+        data: (tasks) => tasks.where((t) {
+          // Filter by projectId AND today's date
+          final isToday = t.createdAt.year == now.year &&
+              t.createdAt.month == now.month &&
+              t.createdAt.day == now.day;
+          return t.projectId == projectId && isToday;
+        }).toList(),
       ) ??
       [];
 });
