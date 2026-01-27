@@ -25,7 +25,6 @@ import '../widgets/floating_widget.dart';
 import '../widgets/add_task_dialog.dart';
 import '../models/project_with_time.dart';
 import '../providers/pending_tasks_provider.dart';
-import '../models/app_version_info.dart';
 import '../services/update_check_service.dart';
 import '../widgets/update_dialog.dart';
 import 'login_screen.dart';
@@ -94,27 +93,6 @@ class _DashboardScreenState
     if (_hasCheckedForUpdates) return;
     _hasCheckedForUpdates = true;
     _logger.info('Checking for app updates...');
-
-    // TODO: Set to true to test the update dialog locally, set to false for production
-    const bool testUpdateDialog = true;
-
-    if (testUpdateDialog) {
-      // Test mode: show fake update dialog
-      _logger.info('TEST MODE: Showing fake update dialog');
-      final fakeVersionInfo = AppVersionInfo(
-        latestVersion: '99.0.0',
-        downloadUrl: 'https://github.com/ssapp1632000/working-tracker-app/releases',
-      );
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          UpdateDialog.show(
-            context: context,
-            versionInfo: fakeVersionInfo,
-          );
-        }
-      });
-      return;
-    }
 
     // Check for updates using GitHub Releases API
     final versionInfo = await _updateCheckService.checkForUpdates();
