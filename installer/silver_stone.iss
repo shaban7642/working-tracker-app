@@ -30,7 +30,7 @@ DefaultGroupName={#MyAppName}
 ; Output settings
 OutputDir=..\Output
 OutputBaseFilename=SilverStone-Setup-{#MyAppVersion}
-SetupIconFile=..\assets\images\app_icon.ico
+SetupIconFile=..\windows\runner\resources\app_icon.ico
 Compression=lzma
 SolidCompression=yes
 
