@@ -25,7 +25,8 @@ import '../widgets/floating_widget.dart';
 import '../widgets/add_task_dialog.dart';
 import '../models/project_with_time.dart';
 import '../providers/pending_tasks_provider.dart';
-import '../services/auto_update_service.dart';
+import '../models/app_version_info.dart';
+import '../services/update_check_service.dart';
 import '../widgets/update_dialog.dart';
 import 'login_screen.dart';
 import 'submission_form_screen.dart';
@@ -57,7 +58,7 @@ class _DashboardScreenState
   final _windowService = WindowService();
   final _api = ApiService();
   final _logger = LoggerService();
-  final _autoUpdateService = AutoUpdateService();
+  final _updateCheckService = UpdateCheckService();
   AttendanceNotifier? _attendanceNotifier;
 
   @override
@@ -94,25 +95,44 @@ class _DashboardScreenState
     _hasCheckedForUpdates = true;
     _logger.info('Checking for app updates...');
 
-    // Initialize and check for updates using auto_updater
-    await _autoUpdateService.initialize();
+    // TODO: Set to true to test the update dialog locally, set to false for production
+    const bool testUpdateDialog = true;
 
-    // Set up callback to show mandatory update dialog
-    _autoUpdateService.onUpdateAvailable = (appcastItem) {
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            UpdateDialog.show(
-              context: context,
-              updateInfo: appcastItem,
-            );
-          }
-        });
-      }
-    };
+    if (testUpdateDialog) {
+      // Test mode: show fake update dialog
+      _logger.info('TEST MODE: Showing fake update dialog');
+      final fakeVersionInfo = AppVersionInfo(
+        latestVersion: '99.0.0',
+        downloadUrl: 'https://github.com/ssapp1632000/working-tracker-app/releases',
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          UpdateDialog.show(
+            context: context,
+            versionInfo: fakeVersionInfo,
+          );
+        }
+      });
+      return;
+    }
 
-    // Check for updates
-    await _autoUpdateService.checkForUpdates();
+    // Check for updates using GitHub Releases API
+    final versionInfo = await _updateCheckService.checkForUpdates();
+
+    // Show mandatory update dialog if update is available
+    if (versionInfo != null && versionInfo.isUpdateAvailable && mounted) {
+      _logger.info('Update available: ${versionInfo.latestVersion}');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          UpdateDialog.show(
+            context: context,
+            versionInfo: versionInfo,
+          );
+        }
+      });
+    } else {
+      _logger.info('No update available or already on latest version');
+    }
   }
 
   /// Load attendance data once and start polling

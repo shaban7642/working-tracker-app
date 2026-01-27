@@ -1,77 +1,77 @@
 import 'dart:io' show exit;
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:auto_updater/auto_updater.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_theme.dart';
+import '../models/app_version_info.dart';
 import '../services/app_info_service.dart';
-import '../services/auto_update_service.dart';
+import '../services/logger_service.dart';
 
 /// Mandatory update dialog - users MUST update to continue using the app
-class UpdateDialog extends ConsumerStatefulWidget {
-  final AppcastItem updateInfo;
+/// No "Later" or "Skip" buttons - only "Update Now"
+class UpdateDialog extends StatelessWidget {
+  final AppVersionInfo versionInfo;
 
   const UpdateDialog({
     super.key,
-    required this.updateInfo,
+    required this.versionInfo,
   });
 
   /// Show the mandatory update dialog (cannot be dismissed)
   static Future<void> show({
     required BuildContext context,
-    required AppcastItem updateInfo,
+    required AppVersionInfo versionInfo,
   }) {
     return showDialog(
       context: context,
       barrierDismissible: false, // Cannot dismiss by tapping outside
       barrierColor: Colors.black.withValues(alpha: 0.85),
-      builder: (context) => UpdateDialog(updateInfo: updateInfo),
+      builder: (context) => UpdateDialog(versionInfo: versionInfo),
     );
   }
 
-  @override
-  ConsumerState<UpdateDialog> createState() => _UpdateDialogState();
-}
+  Future<void> _downloadUpdate(BuildContext context) async {
+    final logger = LoggerService();
+    try {
+      final uri = Uri.parse(versionInfo.downloadUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        logger.info('Opened download URL: ${versionInfo.downloadUrl}');
 
-class _UpdateDialogState extends ConsumerState<UpdateDialog> {
-  bool _isDownloading = false;
-  bool _isReadyToInstall = false;
-  String? _errorMessage;
-  final _autoUpdateService = AutoUpdateService();
+        // Show message that app will close
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Download started. Please install the update and restart the app.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
 
-  @override
-  void initState() {
-    super.initState();
-    _setupUpdateCallbacks();
-  }
-
-  void _setupUpdateCallbacks() {
-    _autoUpdateService.onUpdateDownloaded = (item) {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _isReadyToInstall = true;
-        });
+        // Close the app after a short delay to let user see the message
+        await Future.delayed(const Duration(seconds: 2));
+        exit(0);
+      } else {
+        logger.warning('Cannot launch URL: ${versionInfo.downloadUrl}');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open download page'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
       }
-    };
-
-    _autoUpdateService.onError = (error) {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          _errorMessage = error;
-        });
+    } catch (e) {
+      logger.error('Error opening download URL: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
       }
-    };
-  }
-
-  Future<void> _startDownload() async {
-    setState(() {
-      _isDownloading = true;
-      _errorMessage = null;
-    });
-
-    // Trigger the update check which will download the update
-    await _autoUpdateService.checkForUpdates();
+    }
   }
 
   @override
@@ -98,22 +98,18 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                     color: AppTheme.elevatedSurfaceColor,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(
-                    _isReadyToInstall
-                        ? Icons.check_circle_rounded
-                        : Icons.system_update_rounded,
-                    color: _isReadyToInstall
-                        ? AppTheme.successColor
-                        : AppTheme.secondaryColor,
+                  child: const Icon(
+                    Icons.system_update_rounded,
+                    color: AppTheme.secondaryColor,
                     size: 32,
                   ),
                 ),
                 const SizedBox(height: 20),
 
                 // Title
-                Text(
-                  _isReadyToInstall ? 'Update Ready' : 'Update Required',
-                  style: const TextStyle(
+                const Text(
+                  'Update Required',
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.textPrimary,
@@ -132,7 +128,7 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                     children: [
                       const TextSpan(text: 'Version '),
                       TextSpan(
-                        text: widget.updateInfo.versionString ?? 'New',
+                        text: versionInfo.latestVersion,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           color: AppTheme.textPrimary,
@@ -172,9 +168,7 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          _isReadyToInstall
-                              ? 'Click below to install the update'
-                              : 'Please update to continue using the app',
+                          'Please update to continue using the app',
                           style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.secondaryColor,
@@ -184,106 +178,33 @@ class _UpdateDialogState extends ConsumerState<UpdateDialog> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
-                // Error message
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.errorColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                // Update Now button - ONLY button, no "Later" or "Skip"
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _downloadUpdate(context),
+                    icon: const Icon(Icons.download_rounded, size: 20),
+                    label: const Text(
+                      'Update Now',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: AppTheme.errorColor,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.errorColor,
-                            ),
-                          ),
-                        ),
-                      ],
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.secondaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
+                ),
 
-                // Download progress or button
-                if (_isDownloading) ...[
-                  const SizedBox(height: 8),
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Downloading update...',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-                ] else if (_isReadyToInstall) ...[
-                  // Install button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        // Quit app and install update
-                        // The installer will restart the app after installation
-                        exit(0);
-                      },
-                      icon: const Icon(Icons.install_desktop_rounded, size: 20),
-                      label: const Text(
-                        'Install & Restart',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.successColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  // Update Now button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: _startDownload,
-                      icon: const Icon(Icons.download_rounded, size: 20),
-                      label: const Text(
-                        'Update Now',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.secondaryColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-
-                // No "Later" button - update is mandatory
+                // No "Later" or "Skip" buttons - update is mandatory
               ],
             ),
           ),
