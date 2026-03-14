@@ -12,7 +12,10 @@
       "Bash(flutter build:*)",
       "Bash(flutter run:*)",
       "Bash(flutter clean:*)",
-      "Bash(flutter pub get:*)"
+      "Bash(flutter pub get:*)",
+      "Bash(grep -E \"\\\\.\\(dart|graphql\\)$\")",
+      "Bash(grep -rn \"Image.network\\\\|imageUrl\\\\|imageThumbnailUrl\\\\|cached_network_image\" /Users/ahmedshaban/Developer/working-tracker-app/lib/widgets/project* /Users/ahmedshaban/Developer/working-tracker-app/lib/widgets/floating* /Users/ahmedshaban/Developer/working-tracker-app/lib/widgets/pending_project* --include=\"*.dart\")",
+      "Bash(grep -E \"\\\\.\\(dart|graphql|gql\\)$\")"
     ],
     "deny": [],
     "ask": []

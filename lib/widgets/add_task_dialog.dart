@@ -13,9 +13,10 @@ import '../providers/project_tasks_provider.dart' as ptp;
 import '../services/logger_service.dart';
 import '../services/task_extractor_service.dart';
 import '../services/native_audio_recorder.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../models/project_with_time.dart';
 import '../models/report_task.dart';
+import '../providers/timer_provider.dart';
 
 /// Result from the add task dialog
 class AddTaskResult {
@@ -722,12 +723,11 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
 
     try {
       // Update via API
-      final api = ApiService();
+      final api = GraphqlApiService();
       final updatedTaskData = await api.updateTask(
-        reportId: task.reportId!,
-        taskId: task.id,
-        taskName: taskName != task.taskName ? taskName : null,
-        taskDescription: description != task.taskDescription ? description : null,
+        task.id,
+        title: taskName != task.taskName ? taskName : null,
+        description: description != task.taskDescription ? description : null,
       );
 
       if (updatedTaskData != null) {
@@ -781,27 +781,47 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
         return;
       }
 
-      // Use unified createTask API for all task creation
-      final api = ApiService();
+      // Determine the correct timeEntryId
+      final api = GraphqlApiService();
+      String? timeEntryId;
+      if (widget.entryIds != null && widget.entryIds!.isNotEmpty) {
+        // Pending tasks: use the first time entry ID
+        timeEntryId = widget.entryIds!.first;
+      } else {
+        // Current session: get active time entry ID from timer state
+        timeEntryId = ref.read(currentTimerProvider)?.id;
+      }
+
+      if (timeEntryId == null || timeEntryId.isEmpty) {
+        throw Exception('No active time entry found');
+      }
+
       final result = await api.createTask(
-        projectId: widget.projectId,
-        taskName: taskName,
-        taskDescription: description,
-        reportDate: widget.reportDate ?? DateTime.now(),
-        attachmentPaths: attachmentPaths,
+        timeEntryId: timeEntryId,
+        title: taskName,
+        description: description,
       );
 
       if (result == null) {
         throw Exception('Failed to create task');
       }
 
-      _logger.info('Task created for project: ${widget.projectId}');
+      _logger.info('Task created for time entry: $timeEntryId (project: ${widget.projectId})');
 
-      // If this is a pending task, mark time entries as submitted
-      final isPendingTask = widget.entryIds != null && widget.entryIds!.isNotEmpty;
-      if (isPendingTask) {
-        await api.markMultipleTimeEntriesSubmitted(widget.entryIds!);
-        _logger.info('Time entries marked as submitted');
+      // Duplicate task for remaining entries in merged group (matching mobile behavior)
+      if (widget.entryIds != null && widget.entryIds!.length > 1) {
+        for (int i = 1; i < widget.entryIds!.length; i++) {
+          try {
+            await api.createTask(
+              timeEntryId: widget.entryIds![i],
+              title: taskName,
+              description: description,
+            );
+          } catch (e) {
+            _logger.warning('Failed to duplicate task for entry ${widget.entryIds![i]}: $e');
+          }
+        }
+        _logger.info('Duplicated task for ${widget.entryIds!.length - 1} remaining entries');
       }
 
       // Call the callback with the created task data

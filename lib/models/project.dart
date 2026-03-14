@@ -190,6 +190,60 @@ class Project extends HiveObject {
     );
   }
 
+  // Create from GraphQL response (Project_Project_GetProjects items)
+  factory Project.fromGraphql(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString();
+    final name = (json['name'] ?? 'Unnamed Project') as String;
+
+    // Parse description, fall back to address district
+    String? description = json['description'] as String?;
+    if ((description == null || description.isEmpty) && json['address'] != null && json['address'] is Map) {
+      final address = json['address'] as Map<String, dynamic>;
+      final district = address['district'] as String?;
+      final city = address['city'] as String?;
+      if (district != null && district.isNotEmpty) {
+        description = city != null && city.isNotEmpty ? '$district, $city' : district;
+      }
+    }
+
+    // Get client from createdBy
+    String? client;
+    if (json['createdBy'] != null && json['createdBy'] is Map) {
+      final createdBy = json['createdBy'] as Map<String, dynamic>;
+      final firstName = createdBy['firstName'] as String? ?? '';
+      final lastName = createdBy['lastName'] as String? ?? '';
+      client = '$firstName $lastName'.trim();
+      if (client.isEmpty) client = null;
+    }
+
+    // Parse createdAt
+    DateTime createdAt;
+    try {
+      createdAt = json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'] as String)
+          : DateTime.now();
+    } catch (e) {
+      createdAt = DateTime.now();
+    }
+
+    // Map isActive to status
+    final isActive = json['isActive'] as bool? ?? true;
+    final status = isActive ? 'active' : 'inactive';
+
+    // Project image - prefer thumbnail for list views (smaller, faster loading)
+    final projectImage = json['imageThumbnailUrl'] as String? ?? json['imageUrl'] as String?;
+
+    return Project(
+      id: id,
+      name: name,
+      description: description,
+      client: client,
+      createdAt: createdAt,
+      status: status,
+      projectImage: projectImage,
+    );
+  }
+
   @override
   String toString() {
     return 'Project(id: $id, name: $name, status: $status)';

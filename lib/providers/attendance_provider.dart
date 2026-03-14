@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/attendance_day.dart';
 import '../models/attendance_event.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
-import '../services/socket_service.dart';
+import '../services/subscription_service.dart';
 import 'auth_provider.dart'; // for loggerServiceProvider
 
 // ============================================================================
@@ -66,8 +66,8 @@ class AttendanceRecordError extends AttendanceState {
 
 class AttendanceNotifier extends StateNotifier<AttendanceState> {
   final Ref _ref;
-  final _api = ApiService();
-  final _socketService = SocketService();
+  final _api = GraphqlApiService();
+  final _socketService = SubscriptionService();
   late final LoggerService _logger;
   Timer? _pollingTimer;
   StreamSubscription<AttendanceEvent>? _attendanceEventSubscription;
@@ -175,21 +175,27 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
   }
 
   /// Record biometric (check-in or check-out)
-  /// - First call of the day creates a new record (check-in)
-  /// - Subsequent calls add intervals (check-out)
+  /// Determines whether to check in or out based on current state
   Future<bool> recordBiometric() async {
     try {
       state = const AttendanceRecording();
-      _logger.info('Recording biometric...');
 
-      final attendanceJson = await _api.recordBiometric();
+      // Determine if we should check in or check out
+      final isCurrentlyIn = currentAttendance?.isCurrentlyCheckedIn ?? false;
 
-      if (attendanceJson != null) {
-        final attendanceDay = AttendanceDay.fromJson(attendanceJson);
-        state = AttendanceRecorded(attendanceDay);
-        _logger.info('Biometric recorded: ${attendanceDay.intervals.length} intervals');
+      Map<String, dynamic>? result;
+      if (isCurrentlyIn) {
+        _logger.info('Recording check-out...');
+        result = await _api.checkOut();
+      } else {
+        _logger.info('Recording check-in...');
+        result = await _api.checkIn();
+      }
 
-        // Reload to update the main state with periods data
+      if (result != null) {
+        _logger.info('Biometric recorded successfully');
+
+        // Reload to update the main state with full attendance data
         await loadAttendanceStatus();
         return true;
       } else {

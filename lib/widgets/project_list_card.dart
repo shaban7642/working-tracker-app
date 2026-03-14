@@ -6,24 +6,31 @@ import '../models/project.dart';
 import '../models/report_task.dart';
 import '../core/extensions/context_extensions.dart';
 import 'add_task_dialog.dart';
+import 'cached_project_image.dart';
 
 /// Project card matching the mobile app design
 /// Shows project image, name, tasks badge, and expandable task list
 class ProjectListCard extends ConsumerStatefulWidget {
   final Project project;
   final bool isActive;
+  final bool isPaused;
   final Duration displayTime;
   final List<ReportTask> tasks;
   final VoidCallback onStartTimer;
+  final VoidCallback? onPauseTimer;
+  final VoidCallback? onResumeTimer;
   final bool isLoading;
 
   const ProjectListCard({
     super.key,
     required this.project,
     required this.isActive,
+    this.isPaused = false,
     required this.displayTime,
     required this.tasks,
     required this.onStartTimer,
+    this.onPauseTimer,
+    this.onResumeTimer,
     this.isLoading = false,
   });
 
@@ -33,26 +40,6 @@ class ProjectListCard extends ConsumerStatefulWidget {
 
 class _ProjectListCardState extends ConsumerState<ProjectListCard> {
   bool _isExpanded = false;
-
-  Widget _buildProjectInitial() {
-    return Container(
-      color: widget.isActive
-          ? AppTheme.successColor.withValues(alpha: 0.2)
-          : const Color(0xFF2A2A2A),
-      child: Center(
-        child: Text(
-          widget.project.name.isNotEmpty
-              ? widget.project.name[0].toUpperCase()
-              : 'P',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: widget.isActive ? AppTheme.successColor : Colors.white70,
-          ),
-        ),
-      ),
-    );
-  }
 
   Future<void> _addTask() async {
     final result = await AddTaskSheet.show(
@@ -110,19 +97,12 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
                         width: widget.isActive ? 2 : 1,
                       ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(11),
-                      child: widget.project.projectImage != null &&
-                              widget.project.projectImage!.isNotEmpty
-                          ? Image.network(
-                              widget.project.projectImage!,
-                              width: 64,
-                              height: 64,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  _buildProjectInitial(),
-                            )
-                          : _buildProjectInitial(),
+                    child: CachedProjectImage(
+                      imageUrl: widget.project.projectImage,
+                      projectName: widget.project.name,
+                      size: 64,
+                      isActive: widget.isActive,
+                      activeColor: AppTheme.successColor,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -239,9 +219,52 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
                     ),
                   ),
 
-                  // Play button - only show for inactive projects
-                  if (!widget.isActive) ...[
-                    const SizedBox(width: 12),
+                  // Action button: play (inactive), pause (running), resume (paused)
+                  const SizedBox(width: 12),
+                  if (widget.isActive && !widget.isPaused) ...[
+                    // Pause button - active and running
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: widget.isLoading ? null : widget.onPauseTimer,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.pause,
+                            size: 24,
+                            color: Color(0xFFEF4444),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else if (widget.isActive && widget.isPaused) ...[
+                    // Resume button - active but paused
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: widget.isLoading ? null : widget.onResumeTimer,
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            size: 24,
+                            color: Color(0xFF22C55E),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // Play button - inactive project
                     MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: GestureDetector(

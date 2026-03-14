@@ -1,9 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/pending_time_entry.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import 'auth_provider.dart';
-import 'attendance_provider.dart';
 
 // ============================================================================
 // PENDING TASKS STATE
@@ -86,7 +85,7 @@ class PendingTasksSkipped extends PendingTasksState {
 
 class PendingTasksNotifier extends StateNotifier<PendingTasksState> {
   final Ref _ref;
-  final _api = ApiService();
+  final _api = GraphqlApiService();
   late final LoggerService _logger;
   int _retryCount = 0;
 
@@ -102,17 +101,20 @@ class PendingTasksNotifier extends StateNotifier<PendingTasksState> {
 
     try {
       final rawEntries = await _api.getPendingTimeEntries();
-      final allEntries =
-          rawEntries.map((e) => PendingTimeEntry.fromJson(e)).toList();
-
-      // Filter to only show entries from before today (not today's entries)
+      // Backend filters: ENDED entries with no tasks, excluding current session.
+      // Client filters: exclude today's entries (backend only excludes current session,
+      // not all of today's — e.g. a closed session from earlier today still comes through).
       final today = DateTime.now();
       final todayStart = DateTime(today.year, today.month, today.day);
-      final entries = allEntries
+      final allEntries = rawEntries
+          .map((e) => PendingTimeEntry.fromJson(e))
           .where((entry) => entry.date.isBefore(todayStart))
           .toList();
 
-      _logger.info('Loaded ${allEntries.length} pending entries, ${entries.length} before today');
+      // Merge entries by project+date (same as mobile app)
+      final entries = _mergeByProjectAndDate(allEntries);
+
+      _logger.info('Loaded ${rawEntries.length} raw entries, ${allEntries.length} before today, merged into ${entries.length}');
 
       if (entries.isEmpty) {
         state = const PendingTasksCompleted();
@@ -184,6 +186,30 @@ class PendingTasksNotifier extends StateNotifier<PendingTasksState> {
     _logger.info('All pending tasks marked as completed');
     state = const PendingTasksCompleted();
   }
+
+  /// Merge entries by project+date (same grouping as mobile app)
+  List<PendingTimeEntry> _mergeByProjectAndDate(List<PendingTimeEntry> entries) {
+    final Map<String, List<PendingTimeEntry>> grouped = {};
+
+    for (final entry in entries) {
+      final d = entry.date;
+      final key = '${entry.projectId}_${d.year}-${d.month}-${d.day}';
+      grouped.putIfAbsent(key, () => []).add(entry);
+    }
+
+    return grouped.values.map((group) {
+      if (group.length == 1) return group.first;
+
+      final first = group.first;
+      final totalDuration = group.fold<int>(0, (sum, e) => sum + e.duration);
+      final allIds = group.map((e) => e.id).toList();
+
+      return first.copyWith(
+        entryIds: allIds,
+        duration: totalDuration,
+      );
+    }).toList();
+  }
 }
 
 // ============================================================================
@@ -215,14 +241,11 @@ final canSkipPendingTasksProvider = Provider<bool>((ref) {
 });
 
 /// Derived provider to check if pending tasks dialog should be shown
-/// Shows when: user is checked in AND has pending entries
+/// Shows when: there are pending entries (from previous days, regardless of check-in status)
 final showPendingTasksDialogProvider = Provider<bool>((ref) {
-  final attendance = ref.watch(currentAttendanceProvider);
-  final isCheckedIn = attendance?.isCurrentlyCheckedIn ?? false;
   final pendingState = ref.watch(pendingTasksProvider);
 
-  // Show dialog when checked in and has pending entries
-  if (isCheckedIn && pendingState is PendingTasksLoaded) {
+  if (pendingState is PendingTasksLoaded) {
     return pendingState.entries.isNotEmpty;
   }
 

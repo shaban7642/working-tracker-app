@@ -53,18 +53,15 @@ dependencies:
   # Path provider for storage
   path_provider: ^2.1.5
 
-  # HTTP client for API calls
+  # HTTP client (used by update checker, task extractor, report submission)
   http: ^1.2.2
   http_parser: ^4.0.2
 
+  # GraphQL client
+  graphql: ^5.1.3
+
   # URL Launcher for opening links
   url_launcher: ^6.2.5
-
-  # Socket.IO client for real-time updates
-  socket_io_client: ^2.0.3+1
-
-  # Email sending via SMTP
-  mailer: ^6.0.1
 
   # PIN code input fields
   pin_code_fields: ^8.0.1
@@ -81,6 +78,7 @@ dependencies:
 
   # Screenshot capture for desktop
   screen_capturer: ^0.2.2
+
 
   # Image processing (PNG to JPEG conversion)
   image: ^4.3.0

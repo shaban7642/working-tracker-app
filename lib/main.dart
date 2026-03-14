@@ -8,7 +8,7 @@ import 'core/theme/app_theme.dart';
 import 'services/storage_service.dart';
 import 'services/timer_service.dart';
 import 'services/logger_service.dart';
-import 'services/auth_service.dart';
+import 'services/graphql_auth_service.dart';
 import 'services/app_info_service.dart';
 import 'providers/auth_provider.dart';
 import 'screens/login_screen.dart';
@@ -42,7 +42,7 @@ void main(List<String> args) async {
       await windowManager.ensureInitialized();
 
       // Check if user is logged in to set appropriate window size
-      final authService = AuthService();
+      final authService = GraphqlAuthService();
       final isLoggedIn = authService.isLoggedIn();
 
       // Auth screens: window IS the card, tight fit

@@ -13,6 +13,7 @@ import '../providers/timer_provider.dart';
 import '../providers/project_tasks_provider.dart';
 import '../models/report_task.dart';
 import '../providers/window_provider.dart';
+import 'cached_project_image.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/navigation_provider.dart';
 import '../services/click_through_service.dart';
@@ -825,6 +826,7 @@ class _FloatingWidgetState
   Widget _buildProjectTimeBadge(dynamic currentTimer) {
     final completedDurations = ref.watch(completedProjectDurationsProvider);
     final hasActiveTimer = currentTimer != null;
+    final isPaused = hasActiveTimer && !currentTimer.isRunning;
 
     // Calculate project time
     Duration projectTime = Duration.zero;
@@ -833,23 +835,29 @@ class _FloatingWidgetState
       projectTime = currentTimer.elapsedDuration + completedTime;
     }
 
+    final Color badgeColor = isPaused
+        ? const Color(0xFFEF4444)
+        : hasActiveTimer
+            ? const Color(0xFF07AA5E)
+            : AppTheme.textSecondary;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: hasActiveTimer
-            ? const Color(0xFF07AA5E).withValues(alpha: 0.15)
-            : AppTheme.textHint.withValues(alpha: 0.1),
+        color: badgeColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            hasActiveTimer ? Icons.timer_outlined : Icons.timer_off_outlined,
+            isPaused
+                ? Icons.pause
+                : hasActiveTimer
+                    ? Icons.timer_outlined
+                    : Icons.timer_off_outlined,
             size: FloatingWidgetConstants.compactBadgeIconSize,
-            color: hasActiveTimer
-                ? const Color(0xFF07AA5E)
-                : AppTheme.textSecondary,
+            color: badgeColor,
           ),
           const SizedBox(width: 6),
           Text(
@@ -858,9 +866,7 @@ class _FloatingWidgetState
               fontSize: FloatingWidgetConstants.compactBadgeFontSize,
               fontFamily: 'monospace',
               fontWeight: FontWeight.w600,
-              color: hasActiveTimer
-                  ? const Color(0xFF07AA5E)
-                  : AppTheme.textSecondary,
+              color: badgeColor,
             ),
           ),
         ],
@@ -917,14 +923,16 @@ class _FloatingWidgetState
 
   /// Builds the project icon/image for the main row
   Widget _buildProjectIcon(dynamic currentProject, dynamic currentTimer, List<dynamic> projects) {
-    // Get project image from currentProject or find it from projects list
+    // Get project image and name from currentProject or find it from projects list
     String? projectImage;
+    String projectName = '';
     if (currentProject?.projectImage != null) {
       projectImage = currentProject.projectImage;
+      projectName = currentProject.name ?? '';
     } else if (currentTimer != null) {
-      // Use passed projects list instead of ref.read() to react to updates
       final project = projects.where((p) => p.id == currentTimer.projectId).firstOrNull;
       projectImage = project?.projectImage;
+      projectName = project?.name ?? currentTimer.projectName ?? '';
     }
 
     return Container(
@@ -937,31 +945,13 @@ class _FloatingWidgetState
           width: 1,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(5),
-        child: projectImage != null && projectImage.isNotEmpty
-            ? Image.network(
-                projectImage,
-                width: FloatingWidgetConstants.expandedIconSize,
-                height: FloatingWidgetConstants.expandedIconSize,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => _buildProjectIconFallback(),
-              )
-            : _buildProjectIconFallback(),
-      ),
-    );
-  }
-
-  /// Fallback icon when no project image
-  Widget _buildProjectIconFallback() {
-    return Container(
-      color: AppTheme.primaryColor.withValues(alpha: 0.1),
-      child: const Center(
-        child: Icon(
-          Icons.apartment,
-          color: AppTheme.primaryColor,
-          size: 16,
-        ),
+      child: CachedProjectImage(
+        imageUrl: projectImage,
+        projectName: projectName,
+        size: FloatingWidgetConstants.expandedIconSize,
+        borderRadius: 5,
+        isActive: true,
+        activeColor: AppTheme.primaryColor,
       ),
     );
   }
@@ -1220,9 +1210,12 @@ class _FloatingWidgetState
                         displayTime = completedTime;
                       }
 
+                      final isPaused = isActive && currentTimer != null && !currentTimer.isRunning;
+
                       return FloatingProjectItem(
                         project: project,
                         isActive: isActive,
+                        isPaused: isPaused,
                         tasks: projectTasks,
                         displayTime: displayTime,
                         onTap: () => _onProjectTap(
@@ -1237,6 +1230,8 @@ class _FloatingWidgetState
                           currentTimer,
                           projects.length,
                         ),
+                        onPauseTimer: () => ref.read(currentTimerProvider.notifier).pauseTimer(),
+                        onResumeTimer: () => ref.read(currentTimerProvider.notifier).resumeTimer(),
                       );
                     },
                   ),

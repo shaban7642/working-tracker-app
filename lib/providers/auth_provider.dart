@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
-import '../services/auth_service.dart';
+import '../services/graphql_auth_service.dart';
 import '../services/logger_service.dart';
-import '../services/token_refresh_coordinator.dart';
 
 // Auth service provider
-final authServiceProvider = Provider<AuthService>((ref) {
-  return AuthService();
+final authServiceProvider = Provider<GraphqlAuthService>((ref) {
+  return GraphqlAuthService();
 });
 
 // Logger service provider
@@ -22,15 +21,13 @@ final currentUserProvider = StateNotifierProvider<CurrentUserNotifier, User?>((r
 
 class CurrentUserNotifier extends StateNotifier<User?> {
   final Ref _ref;
-  late final AuthService _authService;
+  late final GraphqlAuthService _authService;
   late final LoggerService _logger;
-  late final TokenRefreshCoordinator _tokenCoordinator;
   StreamSubscription<void>? _forceLogoutSubscription;
 
   CurrentUserNotifier(this._ref) : super(null) {
     _authService = _ref.read(authServiceProvider);
     _logger = _ref.read(loggerServiceProvider);
-    _tokenCoordinator = TokenRefreshCoordinator();
     _loadUser();
     _listenForForceLogout();
   }
@@ -55,7 +52,7 @@ class CurrentUserNotifier extends StateNotifier<User?> {
       state = _authService.getCurrentUser();
       if (state != null) {
         _logger.info('User loaded: ${state!.email}');
-        // Sync user profile from API to ensure data (especially name) is up-to-date
+        // Sync user profile from API to ensure data is up-to-date
         _syncUserProfile();
       }
     } catch (e, stackTrace) {
@@ -78,29 +75,28 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
-  /// Step 1 of 2FA login: Initiate login with email
-  /// Returns loginSessionToken on success, throws on failure
-  Future<String> initiateLogin(String email) async {
+  /// SSO Login - opens browser, waits for callback, returns User
+  Future<User> loginWithSSO() async {
     try {
-      final token = await _authService.initiateLogin(email);
-      _logger.info('Login initiated, OTP sent to email');
-      return token;
+      final user = await _authService.loginWithSSO();
+      state = user;
+      _logger.info('User logged in via SSO: ${user.email}');
+      return user;
     } catch (e, stackTrace) {
-      _logger.error('Login initiation failed in provider', e, stackTrace);
+      _logger.error('SSO login failed in provider', e, stackTrace);
       rethrow;
     }
   }
 
-  /// Step 2 of 2FA login: Verify OTP and complete login
-  /// Returns User object on success, throws on failure
-  Future<User> verifyLoginOTP(String loginSessionToken, String otp) async {
+  /// Dev login with email (single step, for development)
+  Future<User> devLogin(String emailOrId) async {
     try {
-      final user = await _authService.verifyLoginOTP(loginSessionToken, otp);
+      final user = await _authService.devLogin(emailOrId);
       state = user;
-      _logger.info('User logged in via OTP: ${user.email}');
+      _logger.info('User logged in via DevAuth: ${user.email}');
       return user;
     } catch (e, stackTrace) {
-      _logger.error('OTP verification failed in provider', e, stackTrace);
+      _logger.error('Dev login failed in provider', e, stackTrace);
       rethrow;
     }
   }
@@ -117,15 +113,15 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
-  /// Attempt to refresh the access token using the coordinator
+  /// Attempt to refresh the access token
   /// Returns true on success, false on failure
   Future<bool> refreshToken() async {
     try {
-      final success = await _tokenCoordinator.refreshToken();
+      final success = await _authService.refreshAccessToken();
       if (success) {
         // Reload user from storage to get updated tokens
         _loadUser();
-        _logger.info('Token refreshed via coordinator, user state updated');
+        _logger.info('Token refreshed, user state updated');
         return true;
       }
       return false;

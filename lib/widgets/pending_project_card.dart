@@ -4,7 +4,7 @@ import '../core/theme/app_theme.dart';
 import '../models/pending_time_entry.dart';
 import '../models/report_task.dart';
 import '../providers/project_tasks_provider.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import 'pending_task_item.dart';
 import 'add_task_dialog.dart';
 
@@ -161,11 +161,11 @@ class _PendingProjectCardState extends ConsumerState<PendingProjectCard>
 
     try {
       // Delete from API - requires both reportId and taskId
-      final api = ApiService();
+      final api = GraphqlApiService();
       if (task.reportId == null || task.reportId!.isEmpty) {
         throw Exception('Task has no associated report ID');
       }
-      final success = await api.deleteTask(task.reportId!, task.id);
+      final success = await api.deleteTask(task.id);
 
       if (success) {
         // Remove from local state (don't refresh - keeps UI stable)
@@ -345,11 +345,13 @@ class _PendingProjectCardState extends ConsumerState<PendingProjectCard>
   }
 
   Widget _buildProjectAvatar() {
+    final hasImage = widget.entry.projectImage != null && widget.entry.projectImage!.isNotEmpty;
+
     return Container(
       width: 56,
       height: 56,
       decoration: BoxDecoration(
-        gradient: widget.entry.projectImage == null
+        gradient: !hasImage
             ? const LinearGradient(
                 colors: [_blueColor, Color(0xFF1D4ED8)],
                 begin: Alignment.topLeft,
@@ -359,13 +361,12 @@ class _PendingProjectCardState extends ConsumerState<PendingProjectCard>
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
-      child: widget.entry.projectImage != null
+      child: hasImage
           ? Image.network(
               widget.entry.projectImage!,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _buildAvatarFallback();
-              },
+              cacheWidth: 112, // 56 * 2 for retina
+              errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(),
             )
           : _buildAvatarFallback(),
     );

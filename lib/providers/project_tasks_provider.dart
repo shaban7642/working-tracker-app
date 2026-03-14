@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/report_task.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import 'auth_provider.dart';
 
@@ -28,6 +28,103 @@ class ProjectTasksKey {
 
   @override
   String toString() => 'ProjectTasksKey(projectId: $projectId, date: $date)';
+}
+
+// ============================================================================
+// SHARED DAILY REPORT CACHE
+// ============================================================================
+
+/// Cached daily report data - loaded ONCE per date, shared across all projects.
+/// This prevents the N+1 problem where each project card triggers a separate API call.
+/// Supports multiple dates concurrently (dashboard uses today, pending tasks use past dates).
+class DailyReportCache {
+  static final DailyReportCache _instance = DailyReportCache._internal();
+  factory DailyReportCache() => _instance;
+  DailyReportCache._internal();
+
+  final _api = GraphqlApiService();
+  final _logger = LoggerService();
+
+  /// Cache: date -> { projectId -> tasks }
+  final Map<String, Map<String, List<ReportTask>>> _cache = {};
+
+  /// In-flight loading futures per date (prevents duplicate requests)
+  final Map<String, Future<Map<String, List<ReportTask>>>> _loadingFutures = {};
+
+  /// Load the daily report for a date (only fetches once per date)
+  Future<Map<String, List<ReportTask>>> getTasksByProject(String date) async {
+    // Return cached data if available
+    if (_cache.containsKey(date)) {
+      return _cache[date]!;
+    }
+
+    // If already loading this date, wait for the same future
+    if (_loadingFutures.containsKey(date)) {
+      return _loadingFutures[date]!;
+    }
+
+    // Start loading and store the future so concurrent requests share it
+    final future = _loadReport(date);
+    _loadingFutures[date] = future;
+
+    try {
+      final result = await future;
+      return result;
+    } finally {
+      _loadingFutures.remove(date);
+    }
+  }
+
+  Future<Map<String, List<ReportTask>>> _loadReport(String date) async {
+    try {
+      _logger.info('Loading daily report for date: $date (shared cache)');
+      final dateObj = DateTime.parse(date);
+      final dailyReport = await _api.getDailyReportByDate(dateObj);
+
+      final tasksByProject = <String, List<ReportTask>>{};
+
+      if (dailyReport != null) {
+        final items = dailyReport['items'] as List<dynamic>? ?? [];
+        for (final item in items) {
+          final itemMap = item as Map<String, dynamic>;
+          final projectId = itemMap['projectId']?.toString();
+          if (projectId == null || projectId.isEmpty) continue;
+
+          final itemTasks = itemMap['tasks'] as List<dynamic>? ?? [];
+          final tasks = <ReportTask>[];
+          for (final taskJson in itemTasks) {
+            try {
+              tasks.add(ReportTask.fromJson(taskJson as Map<String, dynamic>));
+            } catch (e) {
+              _logger.warning('Failed to parse task: $e');
+            }
+          }
+          tasksByProject[projectId] = tasks;
+        }
+        _logger.info('Daily report cached for $date: ${tasksByProject.length} projects with tasks');
+      } else {
+        _logger.info('Daily report for $date returned null (no report for this date)');
+      }
+
+      _cache[date] = tasksByProject;
+      return tasksByProject;
+    } catch (e, stackTrace) {
+      _logger.error('Failed to load daily report for $date', e, stackTrace);
+      final empty = <String, List<ReportTask>>{};
+      _cache[date] = empty;
+      return empty;
+    }
+  }
+
+  /// Invalidate cache for a specific date
+  void invalidateDate(String date) {
+    _cache.remove(date);
+  }
+
+  /// Invalidate all cached data (call after adding/removing/updating tasks)
+  void invalidate() {
+    _cache.clear();
+  }
 }
 
 // ============================================================================
@@ -73,7 +170,7 @@ class ProjectTasksError extends ProjectTasksState {
 class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
   final Ref _ref;
   final ProjectTasksKey key;
-  final _api = ApiService();
+  final _cache = DailyReportCache();
   late final LoggerService _logger;
 
   ProjectTasksNotifier(this._ref, this.key)
@@ -83,29 +180,20 @@ class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
 
   bool _isLoading = false;
 
-  /// Load tasks for this project and date
+  /// Load tasks for this project and date from the shared cache
   Future<void> loadTasks() async {
-    // Prevent multiple simultaneous loads
-    if (_isLoading) {
-      _logger.info('Already loading tasks for $key, skipping');
-      return;
-    }
+    if (_isLoading) return;
 
     // Don't reload if already loaded
-    if (state is ProjectTasksLoaded) {
-      _logger.info('Tasks already loaded for $key, skipping');
-      return;
-    }
+    if (state is ProjectTasksLoaded) return;
 
     _isLoading = true;
-    _logger.info('Loading tasks for $key');
     state = const ProjectTasksLoading();
 
     try {
-      final rawTasks = await _api.getProjectTasks(key.projectId, date: key.date);
-      final tasks = rawTasks.map((e) => ReportTask.fromJson(e)).toList();
+      final tasksByProject = await _cache.getTasksByProject(key.date);
+      final tasks = tasksByProject[key.projectId] ?? [];
 
-      _logger.info('Loaded ${tasks.length} tasks for $key');
       state = ProjectTasksLoaded(tasks);
     } catch (e, stackTrace) {
       _logger.error('Failed to load tasks for $key', e, stackTrace);
@@ -117,6 +205,7 @@ class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
 
   /// Add a task to the local state (after API success)
   void addTask(ReportTask task) {
+    _cache.invalidateDate(key.date);
     final currentState = state;
     if (currentState is ProjectTasksLoaded) {
       state = ProjectTasksLoaded([...currentState.tasks, task]);
@@ -127,6 +216,7 @@ class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
 
   /// Remove a task from local state
   void removeTask(String taskId) {
+    _cache.invalidateDate(key.date);
     final currentState = state;
     if (currentState is ProjectTasksLoaded) {
       state = ProjectTasksLoaded(
@@ -137,6 +227,7 @@ class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
 
   /// Update a task in local state
   void updateTask(ReportTask updatedTask) {
+    _cache.invalidateDate(key.date);
     final currentState = state;
     if (currentState is ProjectTasksLoaded) {
       state = ProjectTasksLoaded(
@@ -147,21 +238,16 @@ class ProjectTasksNotifier extends StateNotifier<ProjectTasksState> {
 
   /// Refresh tasks from API (forces reload even if already loaded)
   Future<void> refresh() async {
-    // Prevent multiple simultaneous loads
-    if (_isLoading) {
-      _logger.info('Already loading tasks for $key, skipping refresh');
-      return;
-    }
+    if (_isLoading) return;
 
     _isLoading = true;
-    _logger.info('Refreshing tasks for $key');
+    _cache.invalidateDate(key.date);
     state = const ProjectTasksLoading();
 
     try {
-      final rawTasks = await _api.getProjectTasks(key.projectId, date: key.date);
-      final tasks = rawTasks.map((e) => ReportTask.fromJson(e)).toList();
+      final tasksByProject = await _cache.getTasksByProject(key.date);
+      final tasks = tasksByProject[key.projectId] ?? [];
 
-      _logger.info('Refreshed ${tasks.length} tasks for $key');
       state = ProjectTasksLoaded(tasks);
     } catch (e, stackTrace) {
       _logger.error('Failed to refresh tasks for $key', e, stackTrace);

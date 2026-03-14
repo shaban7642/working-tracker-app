@@ -5,7 +5,7 @@ import '../models/project_with_time.dart';
 import '../providers/timer_provider.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/task_provider.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import 'project_task_card.dart';
 import 'gradient_button.dart';
@@ -88,7 +88,7 @@ class MultiProjectTaskDialog extends ConsumerStatefulWidget {
 
 class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog> {
   final _logger = LoggerService();
-  final _api = ApiService();
+  final _api = GraphqlApiService();
 
   List<ProjectWithTime> _projects = [];
   bool _isLoading = true;

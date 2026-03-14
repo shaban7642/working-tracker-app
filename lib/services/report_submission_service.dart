@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/task_submission.dart';
 import 'logger_service.dart';
 import 'storage_service.dart';
-import 'api_service.dart';
+import 'graphql_api_service.dart';
 
 /// Service for submitting session reports to the API
 class ReportSubmissionService {
@@ -14,7 +14,7 @@ class ReportSubmissionService {
 
   final _logger = LoggerService();
   final _storage = StorageService();
-  final _api = ApiService();
+  final _api = GraphqlApiService();
 
   // API Configuration - loaded from .env
   static String get _apiUrl =>

@@ -15,7 +15,7 @@ import '../models/report_task.dart';
 import '../providers/window_provider.dart';
 import '../providers/navigation_provider.dart';
 import '../providers/attendance_provider.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import '../services/window_service.dart';
 import '../widgets/window_controls.dart';
@@ -24,6 +24,7 @@ import '../widgets/project_list_card.dart';
 import '../widgets/floating_widget.dart';
 import '../widgets/add_task_dialog.dart';
 import '../widgets/notification_bell.dart';
+import '../providers/notification_provider.dart';
 import '../models/project_with_time.dart';
 import '../providers/pending_tasks_provider.dart';
 import '../providers/socket_provider.dart';
@@ -57,7 +58,7 @@ class _DashboardScreenState
   final TextEditingController _searchController =
       TextEditingController();
   final _windowService = WindowService();
-  final _api = ApiService();
+  final _api = GraphqlApiService();
   final _logger = LoggerService();
   final _updateCheckService = UpdateCheckService();
   AttendanceNotifier? _attendanceNotifier;
@@ -147,9 +148,10 @@ class _DashboardScreenState
         return;
       }
 
-      final tasks = dailyReport['tasks'] as List?;
-      if (tasks == null || tasks.isEmpty) {
-        _logger.info('No tasks to sync');
+      // Tasks are nested inside items, not at the top level
+      final items = dailyReport['items'] as List<dynamic>? ?? [];
+      if (items.isEmpty) {
+        _logger.info('No report items to sync');
         return;
       }
 
@@ -160,28 +162,28 @@ class _DashboardScreenState
           .toSet();
 
       int syncedCount = 0;
-      for (final task in tasks) {
-        final projectField = task['project'];
-        String projectId = '';
-        if (projectField is Map) {
-          projectId = projectField['_id']?.toString() ?? '';
-        } else if (projectField is String) {
-          projectId = projectField;
-        }
+      for (final item in items) {
+        final itemMap = item as Map<String, dynamic>;
+        final projectId = itemMap['projectId']?.toString() ?? '';
+        if (projectId.isEmpty) continue;
 
-        final taskName = task['title']?.toString() ?? 'Untitled Task';
-        final taskKey = '$projectId:$taskName';
+        final tasks = itemMap['tasks'] as List<dynamic>? ?? [];
+        for (final task in tasks) {
+          final taskMap = task as Map<String, dynamic>;
+          final taskName = taskMap['title']?.toString() ?? taskMap['taskName']?.toString() ?? 'Untitled Task';
+          final taskKey = '$projectId:$taskName';
 
-        if (projectId.isNotEmpty && !existingTaskKeys.contains(taskKey)) {
-          try {
-            await ref.read(tasksProvider.notifier).createTask(
-              projectId: projectId,
-              taskName: taskName,
-            );
-            existingTaskKeys.add(taskKey);
-            syncedCount++;
-          } catch (e) {
-            _logger.warning('Could not sync task "$taskName": $e');
+          if (!existingTaskKeys.contains(taskKey)) {
+            try {
+              await ref.read(tasksProvider.notifier).createTask(
+                projectId: projectId,
+                taskName: taskName,
+              );
+              existingTaskKeys.add(taskKey);
+              syncedCount++;
+            } catch (e) {
+              _logger.warning('Could not sync task "$taskName": $e');
+            }
           }
         }
       }
@@ -201,23 +203,13 @@ class _DashboardScreenState
     }
   }
 
-  /// Check for pending tasks when user is checked in
+  /// Check for pending tasks (from previous days, regardless of check-in status)
   void _checkPendingTasksOnce() {
     if (_hasCheckedPendingTasks) return;
+    _hasCheckedPendingTasks = true;
 
-    // Check if user is currently checked in
-    final attendance = ref.read(currentAttendanceProvider);
-    final isCheckedIn = attendance?.isCurrentlyCheckedIn ?? false;
-
-    _logger.info('Checking pending tasks: isCheckedIn=$isCheckedIn, attendance=$attendance');
-
-    if (isCheckedIn) {
-      _hasCheckedPendingTasks = true;
-      _logger.info('User is checked in, checking for pending tasks...');
-      ref.read(pendingTasksProvider.notifier).loadPendingEntries();
-    } else {
-      _logger.info('User is not checked in, skipping pending tasks check');
-    }
+    _logger.info('Checking for pending tasks...');
+    ref.read(pendingTasksProvider.notifier).loadPendingEntries();
   }
 
   /// Show the pending tasks screen if there are pending entries
@@ -547,6 +539,9 @@ class _DashboardScreenState
     final projectsAsync = ref.watch(projectsProvider);
     final currentTimer = ref.watch(currentTimerProvider);
     final isFloatingMode = ref.watch(windowModeProvider);
+
+    // Eagerly initialize notification provider so it starts fetching & listening to socket events
+    ref.watch(notificationProvider);
     final navigationRequest = ref.watch(
       navigationRequestProvider,
     );
@@ -1194,9 +1189,18 @@ class _DashboardScreenState
                       // Get completed durations for sorting
                       final completedDurations = ref.watch(completedProjectDurationsProvider);
 
+                      // Ensure the active project is in the list even if not yet loaded via pagination
+                      var projectsWithActive = projects;
+                      if (currentTimer != null && !projects.any((p) => p.id == currentTimer.projectId)) {
+                        final selectedProject = ref.watch(selectedProjectProvider);
+                        if (selectedProject != null && selectedProject.id == currentTimer.projectId) {
+                          projectsWithActive = [selectedProject, ...projects];
+                        }
+                      }
+
                       final filteredProjects =
                           _filterProjects(
-                            projects,
+                            projectsWithActive,
                             currentTimer?.projectId,
                             completedDurations,
                           );
@@ -1226,10 +1230,34 @@ class _DashboardScreenState
                         );
                       }
 
-                      return ListView.builder(
+                      return NotificationListener<ScrollNotification>(
+                        onNotification: (scrollInfo) {
+                          // Load more at 70% scroll position
+                          if (scrollInfo.metrics.pixels > scrollInfo.metrics.maxScrollExtent * 0.7) {
+                            final notifier = ref.read(projectsProvider.notifier);
+                            if (notifier.hasNextPage && !notifier.isLoadingMore) {
+                              notifier.loadMoreProjects();
+                            }
+                          }
+                          return false;
+                        },
+                        child: ListView.builder(
                         padding: EdgeInsets.zero,
-                        itemCount: filteredProjects.length,
+                        itemCount: filteredProjects.length + (ref.watch(projectsProvider.notifier).hasNextPage ? 1 : 0),
                         itemBuilder: (context, index) {
+                          // Loading indicator at the end
+                          if (index >= filteredProjects.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24, height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            );
+                          }
+
                           final project = filteredProjects[index];
                           final isActive = currentTimer?.projectId == project.id;
 
@@ -1263,12 +1291,33 @@ class _DashboardScreenState
                             displayTime = completedTime;
                           }
 
+                          final isPaused = isActive && currentTimer != null && !currentTimer.isRunning;
+
                           return ProjectListCard(
                             project: project,
                             isActive: isActive,
+                            isPaused: isPaused,
                             displayTime: displayTime,
                             tasks: projectTasks,
                             isLoading: _isLoading,
+                            onPauseTimer: () async {
+                              try {
+                                await ref.read(currentTimerProvider.notifier).pauseTimer();
+                              } catch (e) {
+                                if (mounted) {
+                                  context.showErrorSnackBar('Failed to pause: $e');
+                                }
+                              }
+                            },
+                            onResumeTimer: () async {
+                              try {
+                                await ref.read(currentTimerProvider.notifier).resumeTimer();
+                              } catch (e) {
+                                if (mounted) {
+                                  context.showErrorSnackBar('Failed to resume: $e');
+                                }
+                              }
+                            },
                             onStartTimer: () async {
                               if (isActive || _isLoading) return;
 
@@ -1319,6 +1368,7 @@ class _DashboardScreenState
                             },
                           );
                         },
+                      ),
                       );
                     },
                   ),

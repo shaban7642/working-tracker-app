@@ -231,14 +231,46 @@ class AttendanceDay {
           .toList();
     }
 
+    // Parse GraphQL todaySessions as periods (checkInAt → startTime, checkOutAt → endTime)
+    if (periods == null && json['todaySessions'] != null && json['todaySessions'] is List) {
+      periods = (json['todaySessions'] as List).map((s) {
+        final session = s as Map<String, dynamic>;
+        return AttendancePeriod(
+          startTime: DateTime.parse(session['checkInAt'] as String).toLocal(),
+          endTime: session['checkOutAt'] != null
+              ? DateTime.parse(session['checkOutAt'] as String).toLocal()
+              : null,
+        );
+      }).toList();
+    }
+
+    // Parse totalSeconds from various sources
+    double totalSeconds = (json['totalSeconds'] as num?)?.toDouble() ?? 0;
+    // GraphQL returns totalWorkedMinutes
+    if (totalSeconds == 0 && json['totalWorkedMinutes'] != null) {
+      totalSeconds = ((json['totalWorkedMinutes'] as num).toDouble()) * 60;
+    }
+
+    // Parse day/date
+    DateTime day;
+    if (json['day'] != null) {
+      day = json['day'] is DateTime
+          ? json['day']
+          : DateTime.parse(json['day'].toString()).toLocal();
+    } else if (json['date'] != null) {
+      day = json['date'] is DateTime
+          ? json['date']
+          : DateTime.parse(json['date'].toString()).toLocal();
+    } else {
+      day = DateTime.now();
+    }
+
     return AttendanceDay(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
-      userId: json['user']?.toString() ?? '',
-      day: json['day'] is DateTime
-          ? json['day']
-          : DateTime.parse(json['day'].toString()).toLocal(),
+      userId: json['user']?.toString() ?? json['employeeId']?.toString() ?? '',
+      day: day,
       intervals: intervals,
-      totalSeconds: (json['totalSeconds'] as num?)?.toDouble() ?? 0,
+      totalSeconds: totalSeconds,
       justification: justification,
       periods: periods,
       isActiveFromApi: json['isActive'] as bool?,

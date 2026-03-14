@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'package:local_notifier/local_notifier.dart';
 import '../models/notification.dart';
-import 'api_service.dart';
+import 'graphql_api_service.dart';
 import 'logger_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
 
-  final _api = ApiService();
+  final _api = GraphqlApiService();
   final _logger = LoggerService();
   bool _isInitialized = false;
 

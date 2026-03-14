@@ -134,16 +134,33 @@ class PendingTimeEntry {
       }).where((e) => e.isNotEmpty).toList();
     }
 
-    // Parse date - could be 'date', 'reportDate', or derive from startedAt
+    // Parse start/end times - GraphQL uses startTime/endTime, old API uses startedAt/endedAt
+    final startTimeStr = json['startTime'] as String? ?? json['startedAt'] as String?;
+    final endTimeStr = json['endTime'] as String? ?? json['endedAt'] as String?;
+
+    final startedAt = startTimeStr != null ? DateTime.parse(startTimeStr) : DateTime.now();
+    final endedAt = endTimeStr != null ? DateTime.parse(endTimeStr) : null;
+
+    // Parse date - could be 'date', 'reportDate', or derive from startTime
     DateTime date;
     if (json['date'] != null) {
       date = DateTime.parse(json['date'] as String);
     } else if (json['reportDate'] != null) {
       date = DateTime.parse(json['reportDate'] as String);
     } else {
-      // Derive from startedAt
-      final startedAt = DateTime.parse(json['startedAt'] as String);
       date = DateTime(startedAt.year, startedAt.month, startedAt.day);
+    }
+
+    // Parse duration - GraphQL may return seconds as num
+    int duration = 0;
+    if (json['duration'] != null && json['duration'] is num) {
+      duration = (json['duration'] as num).toInt();
+    }
+
+    // Parse taskSubmissionStatus from GraphQL or taskSubmitted from old API
+    bool taskSubmitted = json['taskSubmitted'] as bool? ?? false;
+    if (json['taskSubmissionStatus'] != null) {
+      taskSubmitted = json['taskSubmissionStatus'] == 'SUBMITTED';
     }
 
     return PendingTimeEntry(
@@ -155,15 +172,14 @@ class PendingTimeEntry {
       projectName:
           project?['name'] as String? ?? json['projectName'] as String? ?? '',
       projectImage: project?['projectImage'] as String? ??
+          project?['imageUrl'] as String? ??
           json['projectImage'] as String?,
-      startedAt: DateTime.parse(json['startedAt'] as String),
-      endedAt: json['endedAt'] != null
-          ? DateTime.parse(json['endedAt'] as String)
-          : null,
+      startedAt: startedAt,
+      endedAt: endedAt,
       date: date,
-      duration: json['duration'] as int? ?? 0,
-      taskSubmitted: json['taskSubmitted'] as bool? ?? false,
-      openStatus: json['openStatus'] as String? ?? 'closed',
+      duration: duration,
+      taskSubmitted: taskSubmitted,
+      openStatus: json['openStatus'] as String? ?? json['status'] as String? ?? 'closed',
     );
   }
 

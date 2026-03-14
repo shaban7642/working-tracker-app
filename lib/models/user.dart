@@ -132,6 +132,36 @@ class User extends HiveObject {
     return '$firstName $lastName';
   }
 
+  // Create from GraphQL Employee_GetMyProfile response
+  factory User.fromGraphqlProfile(
+    Map<String, dynamic> profile,
+    String accessToken,
+    String? refreshToken,
+  ) {
+    final email = profile['email'] as String? ?? '';
+    final firstName = profile['firstName'] as String?;
+    final lastName = profile['lastName'] as String?;
+    final fullName = profile['fullName'] as String? ??
+        _buildFullName(firstName, lastName) ??
+        email.split('@')[0];
+
+    return User(
+      id: profile['id'] as String,
+      email: email,
+      name: fullName,
+      token: accessToken,
+      refreshToken: refreshToken,
+      createdAt: profile['createdAt'] != null
+          ? DateTime.tryParse(profile['createdAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      lastLoginAt: DateTime.now(),
+      role: profile['designation'] as String?,
+      permissions: null,
+      additionalPermissions: null,
+      avatar: profile['professionalImageUrl'] as String?,
+    );
+  }
+
   // Create from JSON (for local storage)
   factory User.fromJson(Map<String, dynamic> json) {
     return User(

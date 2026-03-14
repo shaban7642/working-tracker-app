@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/task.dart';
 import '../services/task_service.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import 'auth_provider.dart';
 
@@ -146,7 +146,7 @@ class TasksNotifier extends StateNotifier<AsyncValue<List<Task>>> {
   /// This fetches daily reports from the server and syncs them to local storage
   Future<void> syncTasksFromApi(DateTime date) async {
     try {
-      final api = ApiService();
+      final api = GraphqlApiService();
       _logger.info('Syncing tasks from API for date: $date');
 
       final dailyReport = await api.getDailyReportByDate(date);
@@ -156,45 +156,41 @@ class TasksNotifier extends StateNotifier<AsyncValue<List<Task>>> {
         return;
       }
 
-      // Parse tasks from daily report
-      final tasksJson = dailyReport['tasks'] as List<dynamic>? ?? [];
-      _logger.info('Found ${tasksJson.length} tasks in daily report');
+      // Parse tasks from daily report items (GraphQL format)
+      final items = dailyReport['items'] as List<dynamic>? ?? [];
+      _logger.info('Found ${items.length} items in daily report');
 
-      for (final taskJson in tasksJson) {
-        final taskMap = taskJson as Map<String, dynamic>;
-
-        // Extract project ID
-        final projectField = taskMap['project'];
-        String? projectId;
-        if (projectField is Map) {
-          projectId = projectField['_id']?.toString();
-        } else {
-          projectId = projectField?.toString();
-        }
-
+      for (final item in items) {
+        final itemMap = item as Map<String, dynamic>;
+        final projectId = itemMap['projectId']?.toString();
         if (projectId == null) continue;
 
-        final taskName = taskMap['title']?.toString() ?? '';
-        final taskId = taskMap['_id']?.toString() ??
-            DateTime.now().millisecondsSinceEpoch.toString();
+        final tasks = itemMap['tasks'] as List<dynamic>? ?? [];
+        for (final taskJson in tasks) {
+          final taskMap = taskJson as Map<String, dynamic>;
 
-        // Check if task already exists locally
-        final existingTasks = state.valueOrNull ?? [];
-        final exists = existingTasks.any((t) =>
-            t.projectId == projectId && t.taskName == taskName);
+          final taskName = taskMap['title']?.toString() ?? '';
+          final taskId = taskMap['id']?.toString() ??
+              DateTime.now().millisecondsSinceEpoch.toString();
 
-        if (!exists && taskName.isNotEmpty) {
-          // Create local task
-          final task = Task(
-            id: taskId,
-            projectId: projectId,
-            taskName: taskName,
-            createdAt: DateTime.now(),
-          );
+          // Check if task already exists locally
+          final existingTasks = state.valueOrNull ?? [];
+          final exists = existingTasks.any((t) =>
+              t.projectId == projectId && t.taskName == taskName);
 
-          await _taskService.updateTask(task);
-          state = state.whenData((tasks) => [...tasks, task]);
-          _logger.info('Synced task from API: $taskName for project $projectId');
+          if (!exists && taskName.isNotEmpty) {
+            // Create local task
+            final task = Task(
+              id: taskId,
+              projectId: projectId,
+              taskName: taskName,
+              createdAt: DateTime.now(),
+            );
+
+            await _taskService.updateTask(task);
+            state = state.whenData((tasks) => [...tasks, task]);
+            _logger.info('Synced task from API: $taskName for project $projectId');
+          }
         }
       }
 

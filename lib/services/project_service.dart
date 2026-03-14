@@ -2,7 +2,24 @@ import '../models/project.dart';
 import '../core/constants/app_constants.dart';
 import 'storage_service.dart';
 import 'logger_service.dart';
-import 'api_service.dart';
+import 'graphql_api_service.dart';
+
+/// Result of a paginated project fetch
+class ProjectFetchResult {
+  final List<Project> projects;
+  final bool hasNextPage;
+  final int currentPage;
+  final int totalPages;
+  final int total;
+
+  const ProjectFetchResult({
+    required this.projects,
+    this.hasNextPage = false,
+    this.currentPage = 1,
+    this.totalPages = 1,
+    this.total = 0,
+  });
+}
 
 class ProjectService {
   static final ProjectService _instance = ProjectService._internal();
@@ -10,73 +27,85 @@ class ProjectService {
 
   final _storage = StorageService();
   final _logger = LoggerService();
-  final _api = ApiService();
+  final _api = GraphqlApiService();
 
   ProjectService._internal();
 
-  // Fetch projects from API
+  /// Fetch projects from GraphQL API (legacy - returns flat list)
   Future<List<Project>> fetchProjects() async {
+    final result = await fetchProjectsPaginated(page: 1, pageSize: 50);
+    return result.projects;
+  }
+
+  /// Fetch projects with pagination support
+  Future<ProjectFetchResult> fetchProjectsPaginated({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
     try {
-      _logger.info('Fetching projects from API...');
+      _logger.info('Fetching projects page $page (pageSize: $pageSize)...');
 
-      // Fetch projects from API
-      final projectsJson = await _api.getProjects();
+      final result = await _api.getProjectsPaginated(
+        page: page,
+        pageSize: pageSize,
+      );
 
-      // Convert JSON to Project objects and calculate total time from local entries
-      final projects = projectsJson.map((json) {
+      final projects = result.items.map((json) {
         try {
-          final project = Project.fromJson(json);
-          // Calculate total time from local time entries
-          final enriched = _enrichProjectWithLocalTime(project);
-          return enriched;
+          final project = Project.fromGraphql(json);
+          return _enrichProjectWithLocalTime(project);
         } catch (e) {
           _logger.warning('Failed to parse project: $e');
           return null;
         }
       }).whereType<Project>().toList();
 
-      if (projects.isEmpty) {
+      if (projects.isEmpty && page == 1) {
         _logger.warning('No projects received from API, using cached/mock data');
 
-        // Try to load from storage as fallback
         final existingProjects = _storage.getAllProjects();
         if (existingProjects.isNotEmpty) {
           _logger.info('Loaded ${existingProjects.length} projects from storage');
-          // Enrich with local time entries
-          return existingProjects.map((p) => _enrichProjectWithLocalTime(p)).toList();
+          return ProjectFetchResult(
+            projects: existingProjects.map((p) => _enrichProjectWithLocalTime(p)).toList(),
+          );
         }
 
-        // If no storage, create mock projects (don't save to avoid stale data)
-        final mockProjects = _createMockProjects();
-        _logger.info('Created ${mockProjects.length} mock projects (not persisted)');
-        return mockProjects;
+        return ProjectFetchResult(projects: _createMockProjects());
       }
 
-      // Clear old cache and save fresh projects for offline access
-      await _storage.clearProjects();
+      // On first page, clear old cache and save
+      if (page == 1) {
+        await _storage.clearProjects();
+      }
       await _storage.saveProjects(projects);
-      _logger.info('Loaded ${projects.length} projects from API');
+      _logger.info('Loaded ${projects.length} projects (page $page/${result.totalPages})');
 
-      return projects;
+      return ProjectFetchResult(
+        projects: projects,
+        hasNextPage: result.hasNextPage,
+        currentPage: result.page,
+        totalPages: result.totalPages,
+        total: result.total,
+      );
     } catch (e, stackTrace) {
       _logger.error('Failed to fetch projects from API', e, stackTrace);
 
-      // Fallback to storage
-      final existingProjects = _storage.getAllProjects();
-      if (existingProjects.isNotEmpty) {
-        _logger.info('Using ${existingProjects.length} cached projects');
-        // Enrich with local time entries
-        return existingProjects.map((p) => _enrichProjectWithLocalTime(p)).toList();
+      if (page == 1) {
+        final existingProjects = _storage.getAllProjects();
+        if (existingProjects.isNotEmpty) {
+          _logger.info('Using ${existingProjects.length} cached projects');
+          return ProjectFetchResult(
+            projects: existingProjects.map((p) => _enrichProjectWithLocalTime(p)).toList(),
+          );
+        }
+        return ProjectFetchResult(projects: _createMockProjects());
       }
 
-      // Last resort: mock data (don't save to avoid stale data)
-      final mockProjects = _createMockProjects();
-      _logger.info('Using mock projects (not persisted)');
-      return mockProjects;
+      return const ProjectFetchResult(projects: []);
     }
   }
 
-  // Get project by ID
   Project? getProject(String id) {
     try {
       return _storage.getProject(id);
@@ -86,7 +115,6 @@ class ProjectService {
     }
   }
 
-  // Update project
   Future<void> updateProject(Project project) async {
     try {
       await _storage.saveProject(project);
@@ -97,7 +125,6 @@ class ProjectService {
     }
   }
 
-  // Update project total time
   Future<void> updateProjectTime(String projectId, Duration additionalTime) async {
     try {
       final project = _storage.getProject(projectId);
@@ -117,7 +144,6 @@ class ProjectService {
     }
   }
 
-  // Create project (for future use)
   Future<Project> createProject({
     required String name,
     String? description,
@@ -125,7 +151,6 @@ class ProjectService {
     DateTime? deadline,
   }) async {
     try {
-      // TODO: Replace with actual API call
       final project = Project(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: name,
@@ -138,7 +163,6 @@ class ProjectService {
 
       await _storage.saveProject(project);
       _logger.info('Project created: $name');
-
       return project;
     } catch (e, stackTrace) {
       _logger.error('Failed to create project', e, stackTrace);
@@ -146,7 +170,6 @@ class ProjectService {
     }
   }
 
-  // Delete project (for future use)
   Future<void> deleteProject(String id) async {
     try {
       await _storage.deleteProject(id);
@@ -157,14 +180,10 @@ class ProjectService {
     }
   }
 
-  // Sync projects with API (for future implementation)
   Future<void> syncProjects() async {
     try {
       _logger.info('Syncing projects with API...');
-
-      // TODO: Implement API sync
-      await Future.delayed(const Duration(seconds: 1));
-
+      await fetchProjects();
       _logger.info('Projects synced successfully');
     } catch (e, stackTrace) {
       _logger.error('Failed to sync projects', e, stackTrace);
@@ -172,19 +191,14 @@ class ProjectService {
     }
   }
 
-  // Refresh a single project's time from local entries (public method)
   Project refreshProjectTime(Project project) {
     return _enrichProjectWithLocalTime(project);
   }
 
-  // Reset all project times by clearing all time entries
   Future<void> resetAllProjectTimes() async {
     try {
       _logger.info('Resetting all project times...');
-
-      // Clear all time entries from storage
       await _storage.clearAllTimeEntries();
-
       _logger.info('All project times reset successfully');
     } catch (e, stackTrace) {
       _logger.error('Failed to reset project times', e, stackTrace);
@@ -192,36 +206,30 @@ class ProjectService {
     }
   }
 
-  // Helper: Enrich project with total time and lastActiveAt from local time entries
   Project _enrichProjectWithLocalTime(Project project) {
     try {
-      // Get all time entries for this project from local storage
       final timeEntries = _storage.getTimeEntriesByProject(project.id);
 
-      // Calculate total duration and find most recent startTime
       Duration totalTime = Duration.zero;
       DateTime? mostRecentStart;
 
       for (final entry in timeEntries) {
         totalTime += entry.actualDuration;
-        // Track most recent startTime for backfilling lastActiveAt
         if (mostRecentStart == null || entry.startTime.isAfter(mostRecentStart)) {
           mostRecentStart = entry.startTime;
         }
       }
 
-      // Return project with updated total time and lastActiveAt (if not already set)
       return project.copyWith(
         totalTime: totalTime,
         lastActiveAt: project.lastActiveAt ?? mostRecentStart,
       );
     } catch (e) {
       _logger.warning('Failed to calculate total time for project ${project.name}: $e');
-      return project; // Return original project if calculation fails
+      return project;
     }
   }
 
-  // Helper: Create mock projects
   List<Project> _createMockProjects() {
     return AppConstants.mockProjects.asMap().entries.map((entry) {
       return Project(

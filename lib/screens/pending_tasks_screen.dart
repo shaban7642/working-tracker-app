@@ -5,7 +5,7 @@ import '../models/pending_time_entry.dart';
 import '../models/report_task.dart';
 import '../providers/pending_tasks_provider.dart';
 import '../providers/project_tasks_provider.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../widgets/pending_project_card.dart';
 import '../widgets/add_task_dialog.dart';
 import '../widgets/window_controls.dart';
@@ -33,12 +33,6 @@ class PendingTasksScreen extends ConsumerStatefulWidget {
 class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
   // Track which entries have had tasks added in this session
   final Set<String> _completedEntryIds = {};
-  // Track which project+date combos we've already started loading tasks for
-  final Set<String> _loadingKeys = {};
-
-  /// Get a unique key for tracking loaded entries
-  String _getEntryKey(PendingTimeEntry entry) =>
-      '${entry.projectId}_${entry.dateForApi}';
 
   /// Get the provider key for an entry
   ProjectTasksKey _getTasksKey(PendingTimeEntry entry) => ProjectTasksKey(
@@ -49,29 +43,6 @@ class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
   @override
   void initState() {
     super.initState();
-    // Load tasks for all projects after the first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadAllProjectTasks();
-    });
-  }
-
-  /// Load tasks for all pending projects upfront
-  void _loadAllProjectTasks() {
-    final pendingState = ref.read(pendingTasksProvider);
-    if (pendingState is PendingTasksLoaded) {
-      _loadTasksForEntries(pendingState.entries);
-    }
-  }
-
-  /// Load tasks for a list of entries
-  void _loadTasksForEntries(List<PendingTimeEntry> entries) {
-    for (final entry in entries) {
-      final key = _getEntryKey(entry);
-      if (!_loadingKeys.contains(key)) {
-        _loadingKeys.add(key);
-        ref.read(projectTasksProvider(_getTasksKey(entry)).notifier).loadTasks();
-      }
-    }
   }
 
   @override
@@ -79,11 +50,19 @@ class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
     final pendingState = ref.watch(pendingTasksProvider);
     final canSkip = ref.watch(canSkipPendingTasksProvider);
 
-    // Listen for when pending entries are loaded and trigger task loading
+    // Sync local completed IDs from provider (handles subscription-driven completions)
+    if (pendingState is PendingTasksLoaded) {
+      for (final id in pendingState.completedEntryIds) {
+        _completedEntryIds.add(id);
+      }
+    }
+
+    // Auto-pop when all entries are completed (e.g. tasks added from mobile via subscription)
     ref.listen<PendingTasksState>(pendingTasksProvider, (previous, next) {
-      if (next is PendingTasksLoaded && previous is! PendingTasksLoaded) {
-        // Entries just loaded - load tasks for all projects
-        _loadTasksForEntries(next.entries);
+      if (next is PendingTasksCompleted && mounted) {
+        Navigator.of(context).pop();
+      } else if (next is PendingTasksLoaded && next.allEntriesCompleted && mounted) {
+        Navigator.of(context).pop();
       }
     });
 
@@ -472,7 +451,7 @@ class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
 
     if (allEntryIds.isNotEmpty) {
       // Mark all time entries as submitted via API (double validation)
-      final api = ApiService();
+      final api = GraphqlApiService();
       await api.markMultipleTimeEntriesSubmitted(allEntryIds);
     }
 
@@ -487,15 +466,9 @@ class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
     // Check if all entries have at least one task
     bool allCompleted = false;
     if (state is PendingTasksLoaded) {
-      // An entry is complete if:
-      // 1. We've added a task in this session (_completedEntryIds), OR
-      // 2. The project tasks provider shows it has tasks
-      allCompleted = state.entries.every((entry) {
-        if (_completedEntryIds.contains(entry.id)) return true;
-        final tasksKey = _getTasksKey(entry);
-        final tasksState = ref.watch(projectTasksProvider(tasksKey));
-        return tasksState is ProjectTasksLoaded && tasksState.hasTasks;
-      });
+      // An entry is complete only if we've added a task in this session
+      allCompleted = state.entries.every((entry) =>
+          _completedEntryIds.contains(entry.id));
     }
 
     // Colors

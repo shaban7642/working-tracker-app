@@ -20,22 +20,69 @@ class ProjectsNotifier extends StateNotifier<AsyncValue<List<Project>>> {
   late final ProjectService _projectService;
   late final LoggerService _logger;
 
+  // Pagination state
+  int _currentPage = 1;
+  bool _hasNextPage = false;
+  bool _isLoadingMore = false;
+  static const int _pageSize = 20;
+
   ProjectsNotifier(this._ref) : super(const AsyncValue.loading()) {
     _projectService = _ref.read(projectServiceProvider);
     _logger = _ref.read(loggerServiceProvider);
     loadProjects();
   }
 
-  // Load projects
+  bool get hasNextPage => _hasNextPage;
+  bool get isLoadingMore => _isLoadingMore;
+
+  // Load first page of projects
   Future<void> loadProjects() async {
     try {
       state = const AsyncValue.loading();
-      final projects = await _projectService.fetchProjects();
-      state = AsyncValue.data(projects);
-      _logger.info('Loaded ${projects.length} projects');
+      _currentPage = 1;
+
+      final result = await _projectService.fetchProjectsPaginated(
+        page: 1,
+        pageSize: _pageSize,
+      );
+
+      _hasNextPage = result.hasNextPage;
+      _currentPage = result.currentPage;
+      state = AsyncValue.data(result.projects);
+      _logger.info('Loaded ${result.projects.length} projects (page 1, hasNext: $_hasNextPage)');
     } catch (e, stackTrace) {
       _logger.error('Failed to load projects', e, stackTrace);
       state = AsyncValue.error(e, stackTrace);
+    }
+  }
+
+  // Load next page of projects (for infinite scroll)
+  Future<void> loadMoreProjects() async {
+    if (_isLoadingMore || !_hasNextPage) return;
+
+    _isLoadingMore = true;
+
+    try {
+      final nextPage = _currentPage + 1;
+      final result = await _projectService.fetchProjectsPaginated(
+        page: nextPage,
+        pageSize: _pageSize,
+      );
+
+      _hasNextPage = result.hasNextPage;
+      _currentPage = result.currentPage;
+
+      state = state.whenData((currentProjects) {
+        final existingIds = currentProjects.map((p) => p.id).toSet();
+        final newProjects = result.projects.where((p) => !existingIds.contains(p.id)).toList();
+        return [...currentProjects, ...newProjects];
+      });
+
+      _logger.info('Loaded ${result.projects.length} more projects (page $nextPage)');
+    } catch (e, stackTrace) {
+      _logger.error('Failed to load more projects', e, stackTrace);
+    } finally {
+      _isLoadingMore = false;
     }
   }
 
@@ -47,10 +94,17 @@ class ProjectsNotifier extends StateNotifier<AsyncValue<List<Project>>> {
   // Refresh project times from local time entries (lightweight, no API call)
   void refreshProjectTimes() {
     state = state.whenData((projects) {
-      // Recalculate total time for each project from local storage
       return projects.map((project) {
         return _projectService.refreshProjectTime(project);
       }).toList();
+    });
+  }
+
+  // Inject a project into the list (e.g. active project not yet loaded via pagination)
+  void injectProject(Project project) {
+    state = state.whenData((projects) {
+      if (projects.any((p) => p.id == project.id)) return projects;
+      return [project, ...projects];
     });
   }
 

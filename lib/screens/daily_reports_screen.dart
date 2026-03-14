@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/theme/app_theme.dart';
-import '../services/api_service.dart';
+import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import '../widgets/window_controls.dart';
 
@@ -15,7 +15,7 @@ class DailyReportsScreen extends StatefulWidget {
 }
 
 class _DailyReportsScreenState extends State<DailyReportsScreen> {
-  final _api = ApiService();
+  final _api = GraphqlApiService();
   final _logger = LoggerService();
   final _scrollController = ScrollController();
 
@@ -34,6 +34,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
 
   // Expansion state for reports
   final Set<String> _expandedReports = {};
+
+  // Lazy-loaded tasks per date (date string -> tasks list)
+  final Map<String, List<Map<String, dynamic>>> _dayTasks = {};
+  final Set<String> _loadingTasks = {};
 
   @override
   void initState() {
@@ -595,15 +599,142 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     );
   }
 
+  /// Lazy-load tasks for a specific date when user expands a report.
+  /// Step 1: Get daily report (items with timeEntryId, projectName, tasks[id,title,desc])
+  /// Step 2: For each time entry that has tasks, fetch full task data with images
+  Future<void> _loadTasksForDate(String dateStr) async {
+    if (_dayTasks.containsKey(dateStr) || _loadingTasks.contains(dateStr)) return;
+
+    setState(() => _loadingTasks.add(dateStr));
+
+    try {
+      final dateObj = DateTime.parse(dateStr);
+      final dailyReport = await _api.getDailyReportByDate(dateObj);
+
+      final tasks = <Map<String, dynamic>>[];
+      if (dailyReport != null) {
+        final items = dailyReport['items'] as List<dynamic>? ?? [];
+
+        // Collect time entry IDs that have tasks, so we can fetch images
+        final timeEntryIds = <String>[];
+        for (final item in items) {
+          final itemMap = item as Map<String, dynamic>;
+          final timeEntryId = itemMap['timeEntryId'] as String?;
+          final itemTasks = itemMap['tasks'] as List<dynamic>? ?? [];
+          if (timeEntryId != null && itemTasks.isNotEmpty) {
+            timeEntryIds.add(timeEntryId);
+          }
+        }
+
+        // Fetch full task data (with images) for each time entry sequentially
+        final tasksByTimeEntry = <String, List<Map<String, dynamic>>>{};
+        for (final teId in timeEntryIds) {
+          try {
+            final fullTasks = await _api.getTasksByTimeEntry(teId);
+            tasksByTimeEntry[teId] = fullTasks;
+          } catch (e) {
+            _logger.warning('Failed to fetch tasks for time entry $teId: $e');
+          }
+        }
+
+        for (final item in items) {
+          final itemMap = item as Map<String, dynamic>;
+          final projectName = itemMap['projectName'] as String? ?? '';
+          final startTime = itemMap['startTime'] as String?;
+          final endTime = itemMap['endTime'] as String?;
+          final hoursWorked = itemMap['hoursWorked'];
+          final description = itemMap['description'] as String?;
+          final timeEntryId = itemMap['timeEntryId'] as String?;
+          final itemTasks = itemMap['tasks'] as List<dynamic>? ?? [];
+
+          if (itemTasks.isNotEmpty && timeEntryId != null) {
+            // Use full task data (with images) if available, fallback to basic data
+            final fullTasks = tasksByTimeEntry[timeEntryId];
+            if (fullTasks != null && fullTasks.isNotEmpty) {
+              for (final task in fullTasks) {
+                final taskMap = Map<String, dynamic>.from(task);
+                taskMap['project'] = {'name': projectName};
+                taskMap['startTime'] = startTime;
+                taskMap['endTime'] = endTime;
+                taskMap['hoursWorked'] = hoursWorked;
+                tasks.add(taskMap);
+              }
+            } else {
+              // Fallback: use basic task data from daily report
+              for (final task in itemTasks) {
+                final taskMap = Map<String, dynamic>.from(task as Map<String, dynamic>);
+                taskMap['project'] = {'name': projectName};
+                taskMap['startTime'] = startTime;
+                taskMap['endTime'] = endTime;
+                taskMap['hoursWorked'] = hoursWorked;
+                tasks.add(taskMap);
+              }
+            }
+          } else if (itemTasks.isEmpty) {
+            // No tasks for this time entry - show the time entry itself
+            tasks.add({
+              'title': description ?? 'No task submitted',
+              'description': '',
+              'project': {'name': projectName},
+              'startTime': startTime,
+              'endTime': endTime,
+              'hoursWorked': hoursWorked,
+              'isTimeEntryOnly': true,
+            });
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _dayTasks[dateStr] = tasks;
+          _loadingTasks.remove(dateStr);
+        });
+      }
+    } catch (e) {
+      _logger.warning('Failed to load tasks for $dateStr: $e');
+      if (mounted) {
+        setState(() {
+          _dayTasks[dateStr] = [];
+          _loadingTasks.remove(dateStr);
+        });
+      }
+    }
+  }
+
   Widget _buildReportCard(Map<String, dynamic> report) {
     final reportId = report['_id']?.toString() ?? '';
-    final reportDate = report['reportDate'] as String?;
-    final tasks = (report['tasks'] as List?)
-            ?.map((e) => e as Map<String, dynamic>)
-            .toList() ??
-        [];
-    final taskCount = report['taskCount'] ?? tasks.length;
+    final reportDate = report['reportDate'] as String? ?? report['date'] as String?;
+    final totalTime = report['totalTime'] as String? ?? '';
+    final checkIn = report['checkIn'] as String?;
+    final checkOut = report['checkOut'] as String?;
+    final isWeekend = report['isWeekend'] == true;
+    final isHoliday = report['isHoliday'] == true;
+    final isLeave = report['isLeave'] == true;
+    final notes = report['notes'] as String?;
     final isExpanded = _expandedReports.contains(reportId);
+
+    // Get lazy-loaded tasks
+    final tasks = _dayTasks[reportDate] ?? [];
+    final isLoadingDayTasks = _loadingTasks.contains(reportDate);
+    final hasLoadedTasks = _dayTasks.containsKey(reportDate);
+
+    // Determine status color and label
+    Color statusColor = AppTheme.successColor;
+    String? statusLabel;
+    if (isWeekend) {
+      statusColor = Colors.blueGrey;
+      statusLabel = 'Weekend';
+    } else if (isHoliday) {
+      statusColor = Colors.orange;
+      statusLabel = notes ?? 'Holiday';
+    } else if (isLeave) {
+      statusColor = Colors.purple;
+      statusLabel = report['leaveType'] as String? ?? 'Leave';
+    } else if (notes == 'Absent') {
+      statusColor = AppTheme.errorColor;
+      statusLabel = 'Absent';
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -626,6 +757,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                   _expandedReports.remove(reportId);
                 } else {
                   _expandedReports.add(reportId);
+                  // Lazy-load tasks when expanding
+                  if (reportDate != null && !hasLoadedTasks) {
+                    _loadTasksForDate(reportDate);
+                  }
                 }
               });
             },
@@ -639,18 +774,18 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: AppTheme.successColor.withValues(alpha: 0.15),
+                      color: statusColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.calendar_today,
-                      color: AppTheme.successColor,
+                      color: statusColor,
                       size: 22,
                     ),
                   ),
                   const SizedBox(width: 14),
 
-                  // Date and task count
+                  // Date and time info
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -665,35 +800,74 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        // Task count badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.successColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                size: 14,
-                                color: AppTheme.successColor,
+                        Row(
+                          children: [
+                            // Total time badge
+                            if (totalTime.isNotEmpty && totalTime != '00:00')
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.timer_outlined,
+                                      size: 14,
+                                      color: statusColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      totalTime,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(width: 4),
+                            // Check-in/out times
+                            if (checkIn != null) ...[
+                              const SizedBox(width: 8),
                               Text(
-                                '$taskCount task${taskCount != 1 ? 's' : ''}',
+                                '$checkIn${checkOut != null ? ' - $checkOut' : ''}',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppTheme.successColor,
+                                  fontSize: 11,
+                                  color: Colors.white.withValues(alpha: 0.5),
                                 ),
                               ),
                             ],
-                          ),
+                            // Status label for special days
+                            if (statusLabel != null) ...[
+                              if (totalTime.isNotEmpty && totalTime != '00:00')
+                                const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  statusLabel,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: statusColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -710,7 +884,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             ),
           ),
 
-          // Expanded task list
+          // Expanded task list (lazy-loaded)
           AnimatedSize(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOutCubic,
@@ -738,35 +912,49 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.successColor,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                '$taskCount',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                            if (hasLoadedTasks) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.successColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${tasks.length}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 12),
 
+                        // Loading indicator
+                        if (isLoadingDayTasks)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          )
                         // Task items
-                        if (tasks.isEmpty)
+                        else if (tasks.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Text(
-                              'No tasks in this report',
+                              'No tasks for this day',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.white.withValues(alpha: 0.5),
@@ -785,37 +973,34 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     );
   }
 
+  /// Extract image URLs from a task map (from GetByTimeEntry response)
+  List<String> _buildImageList(Map<String, dynamic> task) {
+    final images = task['images'] as List<dynamic>?;
+    if (images == null || images.isEmpty) return [];
+    return images
+        .map((img) {
+          if (img is Map<String, dynamic>) {
+            return img['imageUrl'] as String? ?? img['url'] as String? ?? '';
+          }
+          return '';
+        })
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
   Widget _buildTaskItem(Map<String, dynamic> task) {
     final project = task['project'] as Map<String, dynamic>?;
     final projectName = project?['name'] ?? 'Unknown Project';
-    final title = task['title'] ?? '';
-    final description = task['description'] ?? '';
+    final title = task['title'] as String? ?? '';
+    final description = task['description'] as String? ?? '';
 
-    // Try multiple possible field names for images/attachments
-    List<Map<String, dynamic>> images = [];
-    if (task['images'] != null && task['images'] is List) {
-      images = (task['images'] as List)
-          .map((e) => e as Map<String, dynamic>)
-          .toList();
-    } else if (task['attachments'] != null && task['attachments'] is List) {
-      images = (task['attachments'] as List)
-          .map((e) => e as Map<String, dynamic>)
-          .toList();
-    }
-
-    // Time entry details
-    final timeEntry = task['timeEntry'] as Map<String, dynamic>?;
-    // Handle duration as num (can be int or double from API)
-    final durationField = timeEntry?['duration'];
-    final duration = durationField is num ? durationField.toInt() : 0;
-    final startedAt = timeEntry?['startedAt'] as String?;
-    final endedAt = timeEntry?['endedAt'] as String?;
-
-    // Format duration
+    // hoursWorked from the parent daily report item (decimal hours)
+    final hoursWorked = task['hoursWorked'];
     String formattedDuration = '';
-    if (duration > 0) {
-      final hours = duration ~/ 3600;
-      final minutes = (duration % 3600) ~/ 60;
+    if (hoursWorked != null && hoursWorked is num && hoursWorked > 0) {
+      final totalMinutes = (hoursWorked * 60).round();
+      final hours = totalMinutes ~/ 60;
+      final minutes = totalMinutes % 60;
       if (hours > 0) {
         formattedDuration = '${hours}h ${minutes}m';
       } else {
@@ -823,18 +1008,20 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       }
     }
 
-    // Format time range
+    // startTime / endTime from the parent daily report item (ISO strings)
     String timeRange = '';
-    if (startedAt != null) {
+    final startTimeStr = task['startTime'] as String?;
+    final endTimeStr = task['endTime'] as String?;
+    if (startTimeStr != null) {
       try {
-        final start = DateTime.parse(startedAt).toLocal();
-        final startTime = DateFormat('h:mm a').format(start);
-        if (endedAt != null) {
-          final end = DateTime.parse(endedAt).toLocal();
-          final endTime = DateFormat('h:mm a').format(end);
-          timeRange = '$startTime - $endTime';
+        final start = DateTime.parse(startTimeStr).toLocal();
+        final startFmt = DateFormat('h:mm a').format(start);
+        if (endTimeStr != null) {
+          final end = DateTime.parse(endTimeStr).toLocal();
+          final endFmt = DateFormat('h:mm a').format(end);
+          timeRange = '$startFmt - $endFmt';
         } else {
-          timeRange = 'Started at $startTime';
+          timeRange = 'Started at $startFmt';
         }
       } catch (e) {
         // Ignore parse errors
@@ -966,81 +1153,35 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                         ),
                       ],
 
-                      // Attachments - larger thumbnails
-                      if (images.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.attach_file,
-                              size: 12,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${images.length} attachment${images.length > 1 ? 's' : ''}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.white.withValues(alpha: 0.5),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
+                      // Task images (fetched via GetByTimeEntry)
+                      if (_buildImageList(task).isNotEmpty) ...[
+                        const SizedBox(height: 10),
                         SizedBox(
                           height: 70,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            itemCount: images.length,
+                            itemCount: _buildImageList(task).length,
                             itemBuilder: (context, index) {
-                              final image = images[index];
-                              // Try multiple possible field names for image URL
-                              final imageUrl = (image['path'] ?? image['url'] ?? image['uri'] ?? '') as String;
-                              return GestureDetector(
-                                onTap: () => _showImagePreview(imageUrl),
-                                child: Container(
-                                  width: 70,
-                                  height: 70,
-                                  margin: EdgeInsets.only(
-                                    right: index < images.length - 1 ? 8 : 0,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: const Color(0xFF333333),
-                                    ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(7),
-                                    child: Image.network(
-                                      imageUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          color: const Color(0xFF2A2A2A),
-                                          child: Icon(
-                                            Icons.image_not_supported,
-                                            size: 24,
-                                            color: Colors.white.withValues(alpha: 0.3),
-                                          ),
-                                        );
-                                      },
-                                      loadingBuilder: (context, child, loadingProgress) {
-                                        if (loadingProgress == null) return child;
-                                        return Container(
-                                          color: const Color(0xFF2A2A2A),
-                                          child: Center(
-                                            child: SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppTheme.successColor,
-                                              ),
-                                            ),
-                                          ),
-                                        );
-                                      },
+                              final imageUrl = _buildImageList(task)[index];
+                              return Container(
+                                width: 70,
+                                height: 70,
+                                margin: EdgeInsets.only(
+                                  right: index < _buildImageList(task).length - 1 ? 8 : 0,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFF333333)),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(7),
+                                  child: Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: const Color(0xFF2A2A2A),
+                                      child: Icon(Icons.image_not_supported, size: 24,
+                                        color: Colors.white.withValues(alpha: 0.3)),
                                     ),
                                   ),
                                 ),
@@ -1060,76 +1201,6 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     );
   }
 
-  void _showImagePreview(String imageUrl) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.9),
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E1E),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.broken_image,
-                              size: 48,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Failed to load image',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.close,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Custom date range picker bottom sheet

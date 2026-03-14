@@ -3,41 +3,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/attendance_event.dart';
 import '../models/task_event.dart';
 import '../models/time_entry_event.dart';
-import '../services/socket_service.dart';
+import '../services/subscription_service.dart';
+import '../services/graphql_auth_service.dart';
 import '../services/logger_service.dart';
-import '../services/token_refresh_coordinator.dart';
 import 'pending_tasks_provider.dart';
 import 'project_tasks_provider.dart';
 
-// Socket service provider (singleton)
-final socketServiceProvider = Provider<SocketService>((ref) {
-  return SocketService();
+// Subscription service provider (singleton) - replaces socketServiceProvider
+final socketServiceProvider = Provider<SubscriptionService>((ref) {
+  return SubscriptionService();
 });
 
 // Socket connection state provider
 final socketConnectedProvider = StateProvider<bool>((ref) {
-  return SocketService().isConnected;
+  return SubscriptionService().isConnected;
 });
 
 // Stream provider for time entry events
 final timeEntryEventStreamProvider = StreamProvider<TimeEntryEvent>((ref) {
-  final socketService = ref.watch(socketServiceProvider);
-  return socketService.eventStream;
+  final service = ref.watch(socketServiceProvider);
+  return service.eventStream;
 });
 
 // Stream provider for attendance events
 final attendanceEventStreamProvider = StreamProvider<AttendanceEvent>((ref) {
-  final socketService = ref.watch(socketServiceProvider);
-  return socketService.attendanceEventStream;
+  final service = ref.watch(socketServiceProvider);
+  return service.attendanceEventStream;
 });
 
 // Stream provider for task events
 final taskEventStreamProvider = StreamProvider<TaskEvent>((ref) {
-  final socketService = ref.watch(socketServiceProvider);
-  return socketService.taskEventStream;
+  final service = ref.watch(socketServiceProvider);
+  return service.taskEventStream;
 });
 
-// Provider to initialize and manage socket connection
+// Provider to initialize and manage subscription connection
 final socketInitializerProvider = Provider<SocketInitializer>((ref) {
   return SocketInitializer(ref);
 });
@@ -51,40 +51,40 @@ class SocketInitializer {
 
   SocketInitializer(this._ref);
 
-  /// Initialize socket connection and start listening for events
+  /// Initialize subscriptions and start listening for events
   Future<void> initialize() async {
-    final socketService = _ref.read(socketServiceProvider);
+    final service = _ref.read(socketServiceProvider);
 
     try {
-      await socketService.connect();
+      await service.connect();
       _ref.read(socketConnectedProvider.notifier).state = true;
 
-      // Initialize token refresh handler to handle token expiration
+      // Initialize token refresh handler
       _tokenRefreshHandler = _ref.read(tokenRefreshHandlerProvider);
       _tokenRefreshHandler?.initialize();
 
-      // Initialize task event handler to handle real-time task updates
+      // Initialize task event handler
       _taskEventHandler = _ref.read(taskEventHandlerProvider);
       _taskEventHandler?.initialize();
 
       // Subscribe to events and update connection state
-      _eventSubscription = socketService.eventStream.listen(
+      _eventSubscription = service.eventStream.listen(
         (event) {
-          _logger.info('Socket event received: $event');
+          _logger.info('Subscription event received: $event');
         },
         onError: (error) {
-          _logger.error('Socket event stream error', error, null);
+          _logger.error('Subscription event stream error', error, null);
         },
       );
 
-      _logger.info('Socket initializer ready');
+      _logger.info('Socket initializer ready (using GraphQL subscriptions)');
     } catch (e, stackTrace) {
-      _logger.error('Failed to initialize socket', e, stackTrace);
+      _logger.error('Failed to initialize subscriptions', e, stackTrace);
       _ref.read(socketConnectedProvider.notifier).state = false;
     }
   }
 
-  /// Disconnect socket and cleanup
+  /// Disconnect and cleanup
   void dispose() {
     _eventSubscription?.cancel();
     _tokenRefreshHandler?.dispose();
@@ -100,72 +100,59 @@ final tokenRefreshHandlerProvider = Provider<TokenRefreshHandler>((ref) {
   return TokenRefreshHandler(ref);
 });
 
-/// Handles token refresh when socket receives token errors
-/// and proactively reconnects socket when token is refreshed elsewhere (e.g., API 401)
+/// Handles token refresh when subscriptions receive token errors
 class TokenRefreshHandler {
   final Ref _ref;
   final _logger = LoggerService();
-  final _tokenCoordinator = TokenRefreshCoordinator();
+  final _authService = GraphqlAuthService();
 
   StreamSubscription<String>? _tokenErrorSubscription;
-  StreamSubscription<void>? _tokenRefreshedSubscription;
 
   TokenRefreshHandler(this._ref);
 
-  /// Start listening for token errors and token refresh events
+  /// Start listening for token errors
   void initialize() {
-    final socketService = _ref.read(socketServiceProvider);
+    final service = _ref.read(socketServiceProvider);
 
-    // Listen for socket token errors - trigger refresh
-    _tokenErrorSubscription = socketService.tokenErrorStream.listen(
+    _tokenErrorSubscription = service.tokenErrorStream.listen(
       (error) async {
-        _logger.warning('Token error received from socket: $error');
+        _logger.warning('Token error received from subscription: $error');
         await _handleTokenError();
-      },
-    );
-
-    // Listen for external token refreshes (e.g., from API 401 handling)
-    // Proactively reconnect socket with new token
-    _tokenRefreshedSubscription = _tokenCoordinator.tokenRefreshedStream.listen(
-      (_) async {
-        _logger.info('Token refreshed externally, reconnecting socket...');
-        await _reconnectSocket();
       },
     );
 
     _logger.info('Token refresh handler initialized');
   }
 
-  /// Handle token error by attempting coordinated refresh
+  /// Handle token error by attempting refresh
   Future<void> _handleTokenError() async {
-    _logger.info('Attempting coordinated token refresh due to socket error...');
+    _logger.info('Attempting token refresh due to subscription error...');
 
-    final success = await _tokenCoordinator.refreshToken();
+    final success = await _authService.refreshAccessToken();
 
     if (success) {
-      await _reconnectSocket();
+      await _reconnectSubscriptions();
     } else {
       _logger.warning('Token refresh failed, forcing logout');
-      await _tokenCoordinator.forceLogout();
+      await _authService.forceLogout();
     }
   }
 
-  /// Reconnect socket with new token
-  Future<void> _reconnectSocket() async {
+  /// Reconnect subscriptions with new token
+  Future<void> _reconnectSubscriptions() async {
     try {
-      final socketService = _ref.read(socketServiceProvider);
-      await socketService.reconnect();
+      final service = _ref.read(socketServiceProvider);
+      await service.reconnect();
       _ref.read(socketConnectedProvider.notifier).state = true;
-      _logger.info('Socket reconnected with new token');
+      _logger.info('Subscriptions reconnected with new token');
     } catch (e, stackTrace) {
-      _logger.error('Failed to reconnect socket', e, stackTrace);
+      _logger.error('Failed to reconnect subscriptions', e, stackTrace);
     }
   }
 
   /// Dispose resources
   void dispose() {
     _tokenErrorSubscription?.cancel();
-    _tokenRefreshedSubscription?.cancel();
     _logger.info('Token refresh handler disposed');
   }
 }
@@ -185,9 +172,9 @@ class TaskEventHandler {
 
   /// Start listening for task events
   void initialize() {
-    final socketService = _ref.read(socketServiceProvider);
+    final service = _ref.read(socketServiceProvider);
 
-    _taskEventSubscription = socketService.taskEventStream.listen(
+    _taskEventSubscription = service.taskEventStream.listen(
       (event) {
         _logger.info('Task event received: ${event.type} for task ${event.id}');
         _handleTaskEvent(event);
@@ -202,7 +189,6 @@ class TaskEventHandler {
 
   /// Handle incoming task events
   void _handleTaskEvent(TaskEvent event) {
-    // Use local date to match how the UI builds provider keys
     final localDate = event.effectiveDate.toLocal();
     final dateStr = '${localDate.year}-${localDate.month.toString().padLeft(2, '0')}-${localDate.day.toString().padLeft(2, '0')}';
 
@@ -211,7 +197,7 @@ class TaskEventHandler {
       date: dateStr,
     );
 
-    _logger.info('Task event key: projectId=${event.projectId}, date=$dateStr (from ${event.effectiveDate})');
+    _logger.info('Task event key: projectId=${event.projectId}, date=$dateStr');
 
     switch (event.type) {
       case TaskEventType.created:
@@ -227,9 +213,8 @@ class TaskEventHandler {
   }
 
   void _handleTaskCreated(TaskEvent event, ProjectTasksKey key) {
-    _logger.info('Handling task:created for report: ${event.reportId}, project: ${event.projectId}');
+    _logger.info('Handling task:created for task: ${event.id}, project: ${event.projectId}');
 
-    // First, check if there's a pending entry for this project to get the correct date
     final pendingState = _ref.read(pendingTasksProvider);
     if (pendingState is PendingTasksLoaded) {
       final pendingEntry = pendingState.entries
@@ -241,72 +226,30 @@ class TaskEventHandler {
           projectId: event.projectId,
           date: pendingEntry.dateForApi,
         );
-        _logger.info('Found pending entry for project, using date: ${pendingEntry.dateForApi}');
+
+        final notifier = _ref.read(projectTasksProvider(pendingKey).notifier);
+        final task = event.toReportTask().copyWith(reportDate: pendingEntry.date);
 
         final state = _ref.read(projectTasksProvider(pendingKey));
         if (state is ProjectTasksLoaded) {
-          final taskExists = state.tasks.any((t) => t.id == event.id);
-          if (!taskExists) {
-            final notifier = _ref.read(projectTasksProvider(pendingKey).notifier);
-            final task = event.toReportTask().copyWith(reportDate: pendingEntry.date);
+          if (!state.tasks.any((t) => t.id == event.id)) {
             notifier.addTask(task);
             _logger.info('Added task ${event.id} to $pendingKey (from pending entry)');
-          } else {
-            _logger.info('Task ${event.id} already exists in $pendingKey');
           }
-          return;
+        } else {
+          // Provider not loaded yet — add the task directly
+          notifier.addTask(task);
+          _logger.info('Added task ${event.id} to $pendingKey (provider was not loaded)');
         }
+
+        // Mark the pending entry as completed since it now has a task
+        _ref.read(pendingTasksProvider.notifier).markEntryCompleted(pendingEntry.id);
+        _logger.info('Marked pending entry ${pendingEntry.id} as completed via subscription');
+        return;
       }
     }
 
-    // Search through recent dates to find a provider where tasks have the same reportId
-    final today = DateTime.now();
-    ProjectTasksKey? emptyProviderKey;
-
-    for (int i = 0; i <= 30; i++) {
-      final date = today.subtract(Duration(days: i));
-      final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      final checkKey = ProjectTasksKey(projectId: event.projectId, date: dateStr);
-
-      final state = _ref.read(projectTasksProvider(checkKey));
-
-      if (state is ProjectTasksLoaded) {
-        _logger.info('Checking $checkKey: ${state.tasks.length} tasks');
-
-        // Check if this provider has tasks with the same reportId
-        final hasMatchingReport = state.tasks.any((t) => t.reportId == event.reportId);
-
-        if (hasMatchingReport) {
-          final taskExists = state.tasks.any((t) => t.id == event.id);
-          if (!taskExists) {
-            final notifier = _ref.read(projectTasksProvider(checkKey).notifier);
-            final task = event.toReportTask().copyWith(reportDate: date);
-            notifier.addTask(task);
-            _logger.info('Added task ${event.id} to $checkKey (matched reportId)');
-          } else {
-            _logger.info('Task ${event.id} already exists in $checkKey');
-          }
-          return;
-        }
-
-        // Remember the first empty provider for a past date
-        if (state.tasks.isEmpty && emptyProviderKey == null && i > 0) {
-          emptyProviderKey = checkKey;
-        }
-      }
-    }
-
-    // If we found an empty provider for a past date, use it
-    if (emptyProviderKey != null) {
-      final notifier = _ref.read(projectTasksProvider(emptyProviderKey).notifier);
-      final date = DateTime.parse(emptyProviderKey.date);
-      final task = event.toReportTask().copyWith(reportDate: date);
-      notifier.addTask(task);
-      _logger.info('Added task ${event.id} to $emptyProviderKey (empty past date)');
-      return;
-    }
-
-    // Fallback to createdAt date
+    // Fallback to event date
     final notifier = _ref.read(projectTasksProvider(key).notifier);
     final task = event.toReportTask();
     notifier.addTask(task);
@@ -314,79 +257,83 @@ class TaskEventHandler {
   }
 
   void _handleTaskUpdated(TaskEvent event, ProjectTasksKey key) {
-    // Search through recent dates to find the provider containing this task
-    final today = DateTime.now();
-    for (int i = 0; i <= 30; i++) {
-      final date = today.subtract(Duration(days: i));
-      final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      final checkKey = ProjectTasksKey(projectId: event.projectId, date: dateStr);
+    // Try the event's own date key first
+    final state = _ref.read(projectTasksProvider(key));
+    if (state is ProjectTasksLoaded) {
+      final hasTask = state.tasks.any((t) => t.id == event.id);
+      if (hasTask) {
+        final notifier = _ref.read(projectTasksProvider(key).notifier);
+        notifier.updateTask(event.toReportTask());
+        _logger.info('Updated task ${event.id} in $key');
+        return;
+      }
+    }
 
-      final state = _ref.read(projectTasksProvider(checkKey));
-
-      if (state is ProjectTasksLoaded) {
-        final hasTask = state.tasks.any((t) => t.id == event.id);
-        if (hasTask) {
-          final notifier = _ref.read(projectTasksProvider(checkKey).notifier);
-          final task = event.toReportTask().copyWith(reportDate: date);
-          notifier.updateTask(task);
-          _logger.info('Updated task ${event.id} in $checkKey');
+    // Check pending entries for a matching project
+    final pendingState = _ref.read(pendingTasksProvider);
+    if (pendingState is PendingTasksLoaded) {
+      for (final entry in pendingState.entries.where((e) => e.projectId == event.projectId)) {
+        final pendingKey = ProjectTasksKey(projectId: event.projectId, date: entry.dateForApi);
+        final pState = _ref.read(projectTasksProvider(pendingKey));
+        if (pState is ProjectTasksLoaded && pState.tasks.any((t) => t.id == event.id)) {
+          _ref.read(projectTasksProvider(pendingKey).notifier)
+              .updateTask(event.toReportTask().copyWith(reportDate: entry.date));
+          _logger.info('Updated task ${event.id} in $pendingKey');
           return;
         }
       }
     }
 
-    _logger.info('Task ${event.id} not found for update in any loaded provider');
+    // Provider not loaded — force refresh so updated task is fetched
+    _ref.read(projectTasksProvider(key).notifier).refresh();
+    _logger.info('Refreshing $key to fetch updated task ${event.id}');
   }
 
   void _handleTaskDeleted(TaskEvent event, ProjectTasksKey key) {
-    _logger.info('Handling task:deleted for task: ${event.id}, project: ${event.projectId}');
+    _logger.info('Handling task:deleted for task: ${event.id}');
 
-    // First, check pending entries for the correct date
-    final pendingState = _ref.read(pendingTasksProvider);
-    if (pendingState is PendingTasksLoaded) {
-      final pendingEntry = pendingState.entries
-          .where((e) => e.projectId == event.projectId)
-          .firstOrNull;
-
-      if (pendingEntry != null) {
-        final pendingKey = ProjectTasksKey(
-          projectId: event.projectId,
-          date: pendingEntry.dateForApi,
-        );
-        final state = _ref.read(projectTasksProvider(pendingKey));
-        if (state is ProjectTasksLoaded) {
-          final hasTask = state.tasks.any((t) => t.id == event.id);
-          if (hasTask) {
-            final notifier = _ref.read(projectTasksProvider(pendingKey).notifier);
-            notifier.removeTask(event.id);
-            _logger.info('Removed task ${event.id} from $pendingKey (from pending entry)');
-            return;
-          }
-        }
-      }
+    // Try the event's own date key first
+    final state = _ref.read(projectTasksProvider(key));
+    if (state is ProjectTasksLoaded && state.tasks.any((t) => t.id == event.id)) {
+      _ref.read(projectTasksProvider(key).notifier).removeTask(event.id);
+      _logger.info('Removed task ${event.id} from $key');
+      // Check if this was the last task — unmark the pending entry
+      _checkAndUnmarkPendingEntry(event.projectId, key);
+      return;
     }
 
-    // Search through recent dates
-    final today = DateTime.now();
-    for (int i = 0; i <= 30; i++) {
-      final date = today.subtract(Duration(days: i));
-      final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      final checkKey = ProjectTasksKey(projectId: event.projectId, date: dateStr);
-
-      final state = _ref.read(projectTasksProvider(checkKey));
-
-      if (state is ProjectTasksLoaded) {
-        final hasTask = state.tasks.any((t) => t.id == event.id);
-        if (hasTask) {
-          final notifier = _ref.read(projectTasksProvider(checkKey).notifier);
-          notifier.removeTask(event.id);
-          _logger.info('Removed task ${event.id} from $checkKey');
+    // Check pending entries for a matching project
+    final pendingState = _ref.read(pendingTasksProvider);
+    if (pendingState is PendingTasksLoaded) {
+      for (final entry in pendingState.entries.where((e) => e.projectId == event.projectId)) {
+        final pendingKey = ProjectTasksKey(projectId: event.projectId, date: entry.dateForApi);
+        final pState = _ref.read(projectTasksProvider(pendingKey));
+        if (pState is ProjectTasksLoaded && pState.tasks.any((t) => t.id == event.id)) {
+          _ref.read(projectTasksProvider(pendingKey).notifier).removeTask(event.id);
+          _logger.info('Removed task ${event.id} from $pendingKey');
+          // Check if this was the last task — unmark the pending entry
+          _checkAndUnmarkPendingEntry(event.projectId, pendingKey);
           return;
         }
       }
     }
+  }
 
-    _logger.info('Task ${event.id} not found in any loaded provider');
+  /// After removing a task, check if the entry has no tasks left and unmark it
+  void _checkAndUnmarkPendingEntry(String projectId, ProjectTasksKey key) {
+    final updatedState = _ref.read(projectTasksProvider(key));
+    if (updatedState is ProjectTasksLoaded && updatedState.tasks.isEmpty) {
+      final pendingState = _ref.read(pendingTasksProvider);
+      if (pendingState is PendingTasksLoaded) {
+        final pendingEntry = pendingState.entries
+            .where((e) => e.projectId == projectId)
+            .firstOrNull;
+        if (pendingEntry != null) {
+          _ref.read(pendingTasksProvider.notifier).unmarkEntryCompleted(pendingEntry.id);
+          _logger.info('Unmarked pending entry ${pendingEntry.id} — no tasks remaining');
+        }
+      }
+    }
   }
 
   /// Dispose resources

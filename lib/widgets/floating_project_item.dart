@@ -7,6 +7,7 @@ import '../models/report_task.dart';
 import '../providers/navigation_provider.dart';
 import '../providers/window_provider.dart';
 import 'add_task_dialog.dart';
+import 'cached_project_image.dart';
 
 /// Compact project item for the floating widget dropdown
 /// Matches the mobile app design with project image, name, task badge
@@ -14,20 +15,26 @@ import 'add_task_dialog.dart';
 class FloatingProjectItem extends ConsumerStatefulWidget {
   final dynamic project;
   final bool isActive;
+  final bool isPaused;
   final List<ReportTask> tasks;
   final Duration displayTime;
   final VoidCallback onTap;
   final VoidCallback onStartTimer;
+  final VoidCallback? onPauseTimer;
+  final VoidCallback? onResumeTimer;
   final ValueChanged<bool>? onExpandChanged;
 
   const FloatingProjectItem({
     super.key,
     required this.project,
     required this.isActive,
+    this.isPaused = false,
     required this.tasks,
     required this.displayTime,
     required this.onTap,
     required this.onStartTimer,
+    this.onPauseTimer,
+    this.onResumeTimer,
     this.onExpandChanged,
   });
 
@@ -63,26 +70,6 @@ class _FloatingProjectItemState extends ConsumerState<FloatingProjectItem> {
         context.showSuccessSnackBar('Task added');
       }
     }
-  }
-
-  Widget _buildProjectInitial() {
-    return Container(
-      color: widget.isActive
-          ? AppTheme.successColor.withValues(alpha: 0.2)
-          : const Color(0xFF2A2A2A),
-      child: Center(
-        child: Text(
-          widget.project.name?.isNotEmpty == true
-              ? widget.project.name[0].toUpperCase()
-              : 'P',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: widget.isActive ? AppTheme.successColor : Colors.white70,
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -132,19 +119,13 @@ class _FloatingProjectItemState extends ConsumerState<FloatingProjectItem> {
                         width: widget.isActive ? 1.5 : 1,
                       ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: widget.project.projectImage != null &&
-                              widget.project.projectImage!.isNotEmpty
-                          ? Image.network(
-                              widget.project.projectImage!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  _buildProjectInitial(),
-                            )
-                          : _buildProjectInitial(),
+                    child: CachedProjectImage(
+                      imageUrl: widget.project.projectImage,
+                      projectName: widget.project.name,
+                      size: 40,
+                      borderRadius: 7,
+                      isActive: widget.isActive,
+                      activeColor: AppTheme.successColor,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -260,9 +241,52 @@ class _FloatingProjectItemState extends ConsumerState<FloatingProjectItem> {
                     ),
                   ),
 
-                  // Play button - only show for inactive projects
-                  if (!widget.isActive) ...[
-                    const SizedBox(width: 8),
+                  // Action button: play (inactive), pause (running), resume (paused)
+                  const SizedBox(width: 8),
+                  if (widget.isActive && !widget.isPaused) ...[
+                    // Pause button
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: widget.onPauseTimer,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.pause,
+                            size: 18,
+                            color: Color(0xFFEF4444),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else if (widget.isActive && widget.isPaused) ...[
+                    // Resume button
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: widget.onResumeTimer,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            size: 18,
+                            color: Color(0xFF22C55E),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // Play button - inactive project
                     MouseRegion(
                       cursor: SystemMouseCursors.click,
                       child: GestureDetector(

@@ -76,4 +76,5 @@ class TimeEntryEvent {
 enum TimeEntryEventType {
   started,
   ended,
+  paused,
 }

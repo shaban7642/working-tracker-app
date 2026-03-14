@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/theme/app_theme.dart';
 import '../providers/notification_provider.dart';
+import '../services/graphql_api_service.dart';
 import '../widgets/notification_item.dart';
 import '../widgets/window_controls.dart';
 
@@ -12,6 +13,7 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(notificationProvider);
+    final unreadCount = ref.watch(unreadNotificationCountProvider);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -78,6 +80,24 @@ class NotificationsScreen extends ConsumerWidget {
                                   ),
                                 ),
                                 const Spacer(),
+                                // Mark all as read button
+                                if (unreadCount > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: IconButton(
+                                      onPressed: () async {
+                                        final api = GraphqlApiService();
+                                        final success = await api.markAllNotificationsAsRead();
+                                        if (success) {
+                                          ref.read(unreadNotificationCountProvider.notifier).reset();
+                                        }
+                                      },
+                                      icon: const Icon(Icons.done_all),
+                                      color: Colors.white,
+                                      iconSize: 20,
+                                      tooltip: 'Mark all as read',
+                                    ),
+                                  ),
                                 // Refresh button
                                 Padding(
                                   padding: const EdgeInsets.only(right: 8),
@@ -87,6 +107,8 @@ class NotificationsScreen extends ConsumerWidget {
                                       await ref.read(notificationProvider.notifier).clearAll();
                                       // Refetch from API
                                       await ref.read(notificationProvider.notifier).fetchNotifications();
+                                      // Refresh unread count
+                                      await ref.read(unreadNotificationCountProvider.notifier).fetchCount();
                                     },
                                     icon: const Icon(Icons.refresh),
                                     color: Colors.white,

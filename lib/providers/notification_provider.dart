@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import '../models/notification.dart';
 import '../models/notification_event.dart';
+import '../services/graphql_api_service.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 import '../services/logger_service.dart';
@@ -147,6 +148,9 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     // Show Windows toast
     await _service.showToast(notification);
 
+    // Increment unread count
+    _ref.read(unreadNotificationCountProvider.notifier).increment();
+
     // Add to list
     final currentState = state;
     if (currentState is NotificationLoaded) {
@@ -210,4 +214,32 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 // Provider
 final notificationProvider = StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
   return NotificationNotifier(ref);
+});
+
+// Unread count notifier
+class UnreadCountNotifier extends StateNotifier<int> {
+  final _api = GraphqlApiService();
+  final _logger = LoggerService();
+
+  UnreadCountNotifier() : super(0) {
+    fetchCount();
+  }
+
+  Future<void> fetchCount() async {
+    try {
+      final count = await _api.getUnreadNotificationCount();
+      state = count;
+    } catch (e, stackTrace) {
+      _logger.error('Failed to fetch unread count', e, stackTrace);
+    }
+  }
+
+  void increment() => state = state + 1;
+  void decrement() => state = state > 0 ? state - 1 : 0;
+  void reset() => state = 0;
+}
+
+final unreadNotificationCountProvider =
+    StateNotifierProvider<UnreadCountNotifier, int>((ref) {
+  return UnreadCountNotifier();
 });
