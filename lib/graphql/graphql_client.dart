@@ -18,10 +18,10 @@ class GraphQLClientService {
   String? _currentToken;
 
   static String get _graphqlUrl =>
-      dotenv.env['GRAPHQL_URL'] ?? 'https://app.ssarchitects.ae/graphql';
+      dotenv.env['GRAPHQL_URL'] ?? 'https://community-app-backend.silverstonearchitects.com/graphql';
 
   static String get _graphqlWsUrl =>
-      dotenv.env['GRAPHQL_WS_URL'] ?? 'wss://app.ssarchitects.ae/graphql';
+      dotenv.env['GRAPHQL_WS_URL'] ?? 'wss://community-app-backend.silverstonearchitects.com/graphql';
 
   /// Get or create the GraphQL client
   GraphQLClient get client {

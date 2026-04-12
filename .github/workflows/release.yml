@@ -47,8 +47,13 @@ jobs:
         if: steps.check_release.outputs.EXISTS == 'false'
         run: |
           @"
-          # API
-          API_BASE_URL=https://app.ssarchitects.ae/api/v1
+          # GraphQL Configuration
+          GRAPHQL_URL=https://community-app-backend.silverstonearchitects.com/graphql
+          GRAPHQL_WS_URL=wss://community-app-backend.silverstonearchitects.com/graphql
+
+          # Azure AD SSO Configuration
+          AZURE_CLIENT_ID=6e472cda-3fee-4c43-8116-969682eb0f7d
+          AZURE_TENANT_ID=80afc712-2f76-4083-b430-1f7f0904727f
 
           # GitHub repository for update checks (format: owner/repo)
           GITHUB_REPO=${{ github.repository }}
