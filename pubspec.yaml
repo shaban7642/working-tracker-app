@@ -1,5 +1,5 @@
 name: silver_stone
-description: "A new Flutter project."
+description: 'A new Flutter project.'
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,10 +16,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.10+1
+version: 1.0.11+1
 
 environment:
-  sdk: ^3.10.0
+    sdk: ^3.10.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -28,122 +28,119 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
-  flutter:
-    sdk: flutter
+    flutter:
+        sdk: flutter
 
-  # UI & Icons
-  cupertino_icons: ^1.0.8
+    # UI & Icons
+    cupertino_icons: ^1.0.8
 
-  # Window Management
-  window_manager: ^0.5.1
-  screen_retriever: ^0.2.0
-  system_tray: ^2.0.3
+    # Window Management
+    window_manager: ^0.5.1
+    screen_retriever: ^0.2.0
+    system_tray: ^2.0.3
 
-  # State Management
-  flutter_riverpod: ^2.6.1
+    # State Management
+    flutter_riverpod: ^2.6.1
 
-  # Data Persistence
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
+    # Data Persistence
+    hive: ^2.2.3
+    hive_flutter: ^1.1.0
 
-  # Utilities
-  logger: ^2.5.0
-  intl: ^0.19.0
+    # Utilities
+    logger: ^2.5.0
+    intl: ^0.19.0
 
-  # Path provider for storage
-  path_provider: ^2.1.5
+    # Path provider for storage
+    path_provider: ^2.1.5
 
-  # HTTP client (used by update checker, task extractor, report submission)
-  http: ^1.2.2
-  http_parser: ^4.0.2
+    # HTTP client (used by update checker, task extractor, report submission)
+    http: ^1.2.2
+    http_parser: ^4.0.2
 
-  # GraphQL client
-  graphql: ^5.1.3
+    # GraphQL client
+    graphql: ^5.1.3
 
-  # URL Launcher for opening links
-  url_launcher: ^6.2.5
+    # URL Launcher for opening links
+    url_launcher: ^6.2.5
 
-  # PIN code input fields
-  pin_code_fields: ^8.0.1
+    # PIN code input fields
+    pin_code_fields: ^8.0.1
 
-  # Environment variables
-  flutter_dotenv: ^5.1.0
+    # Environment variables
+    flutter_dotenv: ^5.1.0
 
-  # File picker for attachments
-  file_picker: ^8.1.4
-  image_picker: ^1.1.2
+    # File picker for attachments
+    file_picker: ^8.1.4
+    image_picker: ^1.1.2
 
-  # Drag and drop for desktop
-  desktop_drop: ^0.5.0
+    # Drag and drop for desktop
+    desktop_drop: ^0.5.0
 
-  # Screenshot capture for desktop
-  screen_capturer: ^0.2.2
+    # Screenshot capture for desktop
+    screen_capturer: ^0.2.2
 
+    # Image processing (PNG to JPEG conversion)
+    image: ^4.3.0
 
-  # Image processing (PNG to JPEG conversion)
-  image: ^4.3.0
+    # App version info from pubspec
+    package_info_plus: ^8.0.0
 
-  # App version info from pubspec
-  package_info_plus: ^8.0.0
-
-  # Desktop notifications (Windows/macOS/Linux)
-  local_notifier: ^0.1.6
+    # Desktop notifications (Windows/macOS/Linux)
+    local_notifier: ^0.1.6
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
+    flutter_test:
+        sdk: flutter
 
-  # Linting
-  flutter_lints: ^6.0.0
+    # Linting
+    flutter_lints: ^6.0.0
 
-  # Hive code generation
-  hive_generator: ^2.0.1
-  build_runner: ^2.4.13
+    # Hive code generation
+    hive_generator: ^2.0.1
+    build_runner: ^2.4.13
 
-  # Testing
-  mockito: ^5.4.4
-
+    # Testing
+    mockito: ^5.4.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
 flutter:
+    # The following line ensures that the Material Icons font is
+    # included with your application, so that you can use the icons in
+    # the material Icons class.
+    uses-material-design: true
 
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
-  uses-material-design: true
+    # To add assets to your application, add an assets section, like this:
+    assets:
+        - assets/
+        - assets/images/
+        - .env
+        # Note: Add your blueprint.gif file to the assets folder
 
-  # To add assets to your application, add an assets section, like this:
-  assets:
-    - assets/
-    - assets/images/
-    - .env
-    # Note: Add your blueprint.gif file to the assets folder
+    # An image asset can refer to one or more resolution-specific "variants", see
+    # https://flutter.dev/to/resolution-aware-images
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
+    # For details regarding adding assets from package dependencies, see
+    # https://flutter.dev/to/asset-from-package
 
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
+    # To add custom fonts to your application, add a fonts section here,
+    # in this "flutter" section. Each entry in this list should have a
+    # "family" key with the font family name, and a "fonts" key with a
+    # list giving the asset and other descriptors for the font. For
+    # example:
+    # fonts:
+    #   - family: Schyler
+    #     fonts:
+    #       - asset: fonts/Schyler-Regular.ttf
+    #       - asset: fonts/Schyler-Italic.ttf
+    #         style: italic
+    #   - family: Trajan Pro
+    #     fonts:
+    #       - asset: fonts/TrajanPro.ttf
+    #       - asset: fonts/TrajanPro_Bold.ttf
+    #         weight: 700
+    #
+    # For details regarding fonts from package dependencies,
+    # see https://flutter.dev/to/font-from-package
