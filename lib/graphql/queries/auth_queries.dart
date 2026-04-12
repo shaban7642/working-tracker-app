@@ -1,6 +1,6 @@
 class AuthQueries {
   static const String initiateSsoLogin = r'''
-    mutation Auth_Sso_InitiateSsoLogin($input: InitiateSsoInput) {
+    mutation Auth_Sso_InitiateSsoLogin($input: InitiateSsoInput!) {
       Auth_Sso_InitiateSsoLogin(input: $input) {
         authUrl
         state
@@ -98,7 +98,10 @@ class AuthQueries {
         lineManagerId
         nationality
         phone
-        professionalImageUrl
+        professionalImageUrl {
+          url
+          cacheKey
+        }
         profileCompleteness
         team {
           description
@@ -107,6 +110,30 @@ class AuthQueries {
         }
         teamId
         updatedAt
+      }
+    }
+  ''';
+
+  static const String requestOtp = r'''
+    mutation Auth_Otp_RequestOtp($input: RequestOtpInput!) {
+      Auth_Otp_RequestOtp(input: $input) {
+        success
+        message
+      }
+    }
+  ''';
+
+  static const String verifyOtp = r'''
+    mutation Auth_Otp_VerifyOtp($input: VerifyOtpInput!) {
+      Auth_Otp_VerifyOtp(input: $input) {
+        success
+        message
+        tokens {
+          accessToken
+          refreshToken
+          accessExpiresAt
+          refreshExpiresAt
+        }
       }
     }
   ''';

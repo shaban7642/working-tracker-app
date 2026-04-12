@@ -24,7 +24,7 @@ class TimeEntryQueries {
             description
             images {
               id
-              imageUrl
+              imageUrl { url cacheKey }
             }
             createdAt
             updatedAt
@@ -137,7 +137,7 @@ class TimeEntryQueries {
         project {
           id
           name
-          imageUrl
+          imageUrl { url cacheKey }
         }
         projectId
         sessionId

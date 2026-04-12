@@ -190,6 +190,15 @@ class Project extends HiveObject {
     );
   }
 
+  /// Extract URL string from a SignedFile object or plain string.
+  /// The backend may return `{ url, cacheKey }` (SignedFile) or a plain String.
+  static String? extractUrl(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value.isEmpty ? null : value;
+    if (value is Map) return value['url'] as String?;
+    return null;
+  }
+
   // Create from GraphQL response (Project_Project_GetProjects items)
   factory Project.fromGraphql(Map<String, dynamic> json) {
     final id = (json['id'] ?? '').toString();
@@ -231,7 +240,7 @@ class Project extends HiveObject {
     final status = isActive ? 'active' : 'inactive';
 
     // Project image - prefer thumbnail for list views (smaller, faster loading)
-    final projectImage = json['imageThumbnailUrl'] as String? ?? json['imageUrl'] as String?;
+    final projectImage = extractUrl(json['imageThumbnailUrl']) ?? extractUrl(json['imageUrl']);
 
     return Project(
       id: id,

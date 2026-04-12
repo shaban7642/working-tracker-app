@@ -88,6 +88,30 @@ class CurrentUserNotifier extends StateNotifier<User?> {
     }
   }
 
+  /// Request OTP - sends verification code to email
+  Future<void> requestOtp(String email) async {
+    try {
+      await _authService.requestOtp(email);
+      _logger.info('OTP requested for: $email');
+    } catch (e, stackTrace) {
+      _logger.error('OTP request failed in provider', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Verify OTP - validates code and logs user in
+  Future<User> verifyOtp(String email, String code) async {
+    try {
+      final user = await _authService.verifyOtp(email, code);
+      state = user;
+      _logger.info('User logged in via OTP: ${user.email}');
+      return user;
+    } catch (e, stackTrace) {
+      _logger.error('OTP verification failed in provider', e, stackTrace);
+      rethrow;
+    }
+  }
+
   /// Dev login with email (single step, for development)
   Future<User> devLogin(String emailOrId) async {
     try {

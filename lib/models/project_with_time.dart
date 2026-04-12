@@ -75,17 +75,35 @@ class ProjectWithTime {
 
 /// Information about a submitted task
 class SubmittedTaskInfo {
+  final String? id;
   final String taskName;
   final String description;
   final DateTime submittedAt;
   final List<String> attachmentNames;
 
   SubmittedTaskInfo({
+    this.id,
     required this.taskName,
     required this.description,
     required this.submittedAt,
     this.attachmentNames = const [],
   });
+
+  SubmittedTaskInfo copyWith({
+    String? id,
+    String? taskName,
+    String? description,
+    DateTime? submittedAt,
+    List<String>? attachmentNames,
+  }) {
+    return SubmittedTaskInfo(
+      id: id ?? this.id,
+      taskName: taskName ?? this.taskName,
+      description: description ?? this.description,
+      submittedAt: submittedAt ?? this.submittedAt,
+      attachmentNames: attachmentNames ?? this.attachmentNames,
+    );
+  }
 }
 
 /// A local task that needs to be submitted to the API

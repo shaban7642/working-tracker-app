@@ -234,6 +234,86 @@ class GraphqlAuthService {
   }
 
   // ============================================================================
+  // OTP LOGIN FLOW
+  // ============================================================================
+
+  /// Request OTP - sends a 6-digit code to the user's email
+  Future<void> requestOtp(String email) async {
+    try {
+      _logger.info('Requesting OTP for: $email');
+
+      final result = await _graphql.mutate(
+        AuthQueries.requestOtp,
+        variables: {
+          'input': {
+            'email': email,
+          },
+        },
+      );
+
+      if (result.hasException || result.data == null) {
+        final errorMsg = result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Failed to send verification code';
+        throw Exception(errorMsg);
+      }
+
+      final data = result.data!['Auth_Otp_RequestOtp'];
+      if (data['success'] != true) {
+        throw Exception(data['message'] ?? 'Failed to send verification code');
+      }
+
+      _logger.info('OTP sent successfully to: $email');
+    } catch (e, stackTrace) {
+      _logger.error('Failed to request OTP', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Verify OTP - validates the code and returns User with tokens
+  Future<User> verifyOtp(String email, String code) async {
+    try {
+      _logger.info('Verifying OTP for: $email');
+
+      final result = await _graphql.mutate(
+        AuthQueries.verifyOtp,
+        variables: {
+          'input': {
+            'email': email,
+            'code': code,
+          },
+        },
+      );
+
+      if (result.hasException || result.data == null) {
+        final errorMsg = result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Verification failed';
+        throw Exception(errorMsg);
+      }
+
+      final data = result.data!['Auth_Otp_VerifyOtp'];
+      if (data['success'] != true) {
+        throw Exception(data['message'] ?? 'Verification failed');
+      }
+
+      final tokens = data['tokens'];
+      final accessToken = tokens['accessToken'] as String;
+      final refreshToken = tokens['refreshToken'] as String;
+
+      // Update GraphQL client with new token
+      _graphql.updateToken(accessToken);
+
+      // Fetch user profile
+      final user = await _fetchAndSaveUser(accessToken, refreshToken);
+
+      _logger.info('OTP verification successful for: ${user.email}');
+      return user;
+    } catch (e, stackTrace) {
+      _logger.error('OTP verification failed', e, stackTrace);
+      rethrow;
+    }
+  }
+
+  // ============================================================================
   // SHARED AUTH HELPERS
   // ============================================================================
 

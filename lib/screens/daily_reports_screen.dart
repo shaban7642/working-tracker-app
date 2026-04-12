@@ -980,7 +980,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     return images
         .map((img) {
           if (img is Map<String, dynamic>) {
-            return img['imageUrl'] as String? ?? img['url'] as String? ?? '';
+            final imgUrl = img['imageUrl'];
+            if (imgUrl is Map) {
+              return imgUrl['url'] as String? ?? '';
+            }
+            return imgUrl as String? ?? img['url'] as String? ?? '';
           }
           return '';
         })

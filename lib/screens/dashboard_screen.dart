@@ -360,6 +360,17 @@ class _DashboardScreenState
 
     // If there's a running project, show task submit dialog first
     if (currentTimer != null && currentTimer.projectId != newProject.id) {
+      // Check if current project already has tasks today — skip dialog if so
+      final attendance = ref.read(currentAttendanceProvider);
+      final now = attendance?.day ?? DateTime.now();
+      final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final tasksKey = ptp.ProjectTasksKey(projectId: currentTimer.projectId, date: dateStr);
+      final hasTasks = ref.read(ptp.projectHasTasksProvider(tasksKey));
+
+      if (hasTasks) {
+        return true; // Already has tasks, proceed without dialog
+      }
+
       // Get time for current project
       final completedDurations = ref.read(completedProjectDurationsProvider);
       final completedTime = completedDurations[currentTimer.projectId] ?? Duration.zero;
@@ -595,6 +606,19 @@ class _DashboardScreenState
           }
         });
       }
+
+      // Handle checkout: stop running timer when attendance becomes inactive
+      if (wasCheckedIn && !isNowCheckedIn) {
+        final currentTimer = ref.read(currentTimerProvider);
+        if (currentTimer != null) {
+          _logger.info('Checkout detected via polling, stopping running timer');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ref.read(currentTimerProvider.notifier).stopTimer();
+            }
+          });
+        }
+      }
     });
 
     // Listen for pending tasks state changes and show screen when loaded
@@ -735,7 +759,9 @@ class _DashboardScreenState
                           children: [
 
                 // Attendance Time Display (Read-Only)
-                Builder(
+                Flexible(
+                  flex: 0,
+                  child: Builder(
                   builder: (context) {
                     final attendance = ref.watch(currentAttendanceProvider);
                     final isAttendanceLoading = ref.watch(isAttendanceLoadingProvider);
@@ -1065,6 +1091,7 @@ class _DashboardScreenState
                     );
                   },
                 ),
+                ),
                 const SizedBox(height: 12),
 
                 // Search bar
@@ -1300,6 +1327,7 @@ class _DashboardScreenState
                             displayTime: displayTime,
                             tasks: projectTasks,
                             isLoading: _isLoading,
+                            onTasksChanged: () => _syncTasksFromApi(),
                             onPauseTimer: () async {
                               try {
                                 await ref.read(currentTimerProvider.notifier).pauseTimer();

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
 import '../models/project_with_time.dart';
+import '../models/report_task.dart';
+import 'add_task_dialog.dart';
 import 'task_form_widget.dart';
 
 /// Expandable card for a single project in the multi-project task dialog
@@ -10,6 +12,8 @@ class ProjectTaskCard extends StatefulWidget {
   final bool initiallyExpanded;
   final Function(SubmittedTaskInfo task) onTaskSubmitted;
   final Function(String localTaskId)? onPendingTaskSubmitted;
+  final Function(SubmittedTaskInfo task, String newTitle, String newDescription)? onTaskUpdated;
+  final Function(SubmittedTaskInfo task)? onTaskDeleted;
 
   const ProjectTaskCard({
     super.key,
@@ -17,6 +21,8 @@ class ProjectTaskCard extends StatefulWidget {
     this.initiallyExpanded = false,
     required this.onTaskSubmitted,
     this.onPendingTaskSubmitted,
+    this.onTaskUpdated,
+    this.onTaskDeleted,
   });
 
   @override
@@ -397,6 +403,33 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
     );
   }
 
+  Future<void> _editTask(SubmittedTaskInfo task) async {
+    if (task.id == null) return;
+
+    final reportTask = ReportTask(
+      id: task.id!,
+      userId: '',
+      reportDate: DateTime.now(),
+      projectId: widget.project.projectId,
+      taskName: task.taskName,
+      taskDescription: task.description,
+    );
+
+    final result = await AddTaskSheet.showEdit(
+      context: context,
+      projectId: widget.project.projectId,
+      projectName: widget.project.projectName,
+      taskToEdit: reportTask,
+      onTaskUpdated: (updatedTask) {
+        widget.onTaskUpdated?.call(task, updatedTask.taskName, updatedTask.taskDescription);
+      },
+    );
+
+    if (result == true && mounted) {
+      widget.onTaskUpdated?.call(task, task.taskName, task.description);
+    }
+  }
+
   Widget _buildTaskItem(SubmittedTaskInfo task) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -444,12 +477,76 @@ class _ProjectTaskCardState extends State<ProjectTaskCard>
               ],
             ),
           ),
-          Text(
-            _formatTime(task.submittedAt),
-            style: TextStyle(
-              fontSize: 10,
-              color: AppTheme.textSecondary,
+          // Edit & Delete buttons (only for API tasks with an id)
+          if (task.id != null && (widget.onTaskUpdated != null || widget.onTaskDeleted != null)) ...[
+            if (widget.onTaskUpdated != null)
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => _editTask(task),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.edit,
+                      size: 14,
+                      color: Color(0xFFFFC107),
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.onTaskDeleted != null)
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => _confirmDelete(task),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 14,
+                      color: AppTheme.errorColor,
+                    ),
+                  ),
+                ),
+              ),
+          ] else
+            Text(
+              _formatTime(task.submittedAt),
+              style: TextStyle(
+                fontSize: 10,
+                color: AppTheme.textSecondary,
+              ),
             ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(SubmittedTaskInfo task) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text(
+          'Delete Task',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${task.taskName}"? This action cannot be undone.',
+          style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.onTaskDeleted?.call(task);
+            },
+            child: Text('Delete', style: TextStyle(color: AppTheme.errorColor, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

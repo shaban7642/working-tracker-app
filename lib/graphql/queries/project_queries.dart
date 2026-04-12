@@ -16,8 +16,8 @@ class ProjectQueries {
           id
           name
           description
-          imageUrl
-          imageThumbnailUrl
+          imageUrl { url cacheKey }
+          imageThumbnailUrl { url cacheKey }
           isActive
           boardMemberCount
           employeeCount

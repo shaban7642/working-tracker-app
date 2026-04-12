@@ -7,7 +7,7 @@ class TaskQueries {
         id
         images {
           id
-          imageUrl
+          imageUrl { url cacheKey }
         }
         timeEntry {
           description
@@ -28,7 +28,7 @@ class TaskQueries {
         id
         images {
           id
-          imageUrl
+          imageUrl { url cacheKey }
         }
         timeEntry {
           description
@@ -55,7 +55,7 @@ class TaskQueries {
         id
         images {
           id
-          imageUrl
+          imageUrl { url cacheKey }
         }
         timeEntry {
           description
@@ -75,7 +75,7 @@ class TaskQueries {
         createdAt
         fileSize
         id
-        imageUrl
+        imageUrl { url cacheKey }
         mimeType
         order
         task {
@@ -84,7 +84,20 @@ class TaskQueries {
           title
         }
         taskId
-        thumbnailUrl
+        thumbnailUrl { url cacheKey }
+      }
+    }
+  ''';
+
+  static const String getTaskImages = r'''
+    query Attendance_TaskImage_GetByTask($taskId: String!) {
+      Attendance_TaskImage_GetByTask(taskId: $taskId) {
+        id
+        imageUrl { url cacheKey }
+        thumbnailUrl { url cacheKey }
+        caption
+        mimeType
+        taskId
       }
     }
   ''';

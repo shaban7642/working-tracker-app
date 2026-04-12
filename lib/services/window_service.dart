@@ -77,6 +77,25 @@ class WindowService {
     }
   }
 
+  // Set window size for email entry screen
+  Future<void> setEmailEntryWindowSize() async {
+    if (!_isDesktop()) return;
+
+    try {
+      await windowManager.ensureInitialized();
+      await windowManager.setResizable(false);
+      await windowManager.setSize(const Size(380, 440));
+      await windowManager.center();
+      _logger.info('Email entry window size set');
+    } catch (e, stackTrace) {
+      _logger.error(
+        'Failed to set email entry window size',
+        e,
+        stackTrace,
+      );
+    }
+  }
+
   // Set window size for OTP verification screen
   Future<void> setOtpWindowSize() async {
     if (!_isDesktop()) return;

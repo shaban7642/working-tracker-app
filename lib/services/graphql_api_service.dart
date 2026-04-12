@@ -598,19 +598,21 @@ class GraphqlApiService {
     required String timeEntryId,
     required String title,
     String? description,
+    List<Map<String, dynamic>>? images,
   }) async {
     try {
       _logger.info('Creating task for time entry: $timeEntryId');
 
+      final input = <String, dynamic>{
+        'timeEntryId': timeEntryId,
+        'title': title,
+        if (description != null) 'description': description,
+        if (images != null && images.isNotEmpty) 'images': images,
+      };
+
       final data = await _mutateWithRetry(
         TaskQueries.createTask,
-        variables: {
-          'input': {
-            'timeEntryId': timeEntryId,
-            'title': title,
-            if (description != null) 'description': description,
-          },
-        },
+        variables: {'input': input},
       );
 
       if (data == null) return null;
@@ -618,6 +620,44 @@ class GraphqlApiService {
     } catch (e, stackTrace) {
       _logger.error('Failed to create task', e, stackTrace);
       if (e is TokenExpiredException) rethrow;
+      return null;
+    }
+  }
+
+  /// Upload a file to storage and return the URL and metadata
+  Future<Map<String, dynamic>?> uploadFileToStorage(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final base64String = base64Encode(bytes);
+      final filename = file.path.split('/').last;
+      final extension = filename.split('.').last.toLowerCase();
+      final contentType = _getContentType(extension);
+
+      final uploadData = await _mutateWithRetry(
+        StorageQueries.uploadImageWithThumbnail,
+        variables: {
+          'input': {
+            'base64': base64String,
+            'filename': filename,
+            'contentType': contentType,
+            'folder': 'ATTENDANCE',
+          },
+        },
+      );
+
+      if (uploadData == null) return null;
+
+      final result = uploadData['Storage_UploadImageWithThumbnail'] as Map<String, dynamic>;
+      final urlField = result['url'];
+      final thumbField = result['thumbnailUrl'];
+      return {
+        'imageUrl': (urlField is Map) ? urlField['url'] as String : urlField as String,
+        'thumbnailUrl': (thumbField is Map) ? thumbField['url'] as String? : thumbField as String?,
+        'mimeType': contentType,
+        'fileSize': bytes.length,
+      };
+    } catch (e, stackTrace) {
+      _logger.error('Failed to upload file to storage', e, stackTrace);
       return null;
     }
   }
@@ -692,6 +732,24 @@ class GraphqlApiService {
   // TASK IMAGES
   // ============================================================================
 
+  /// Get images for a task by task ID
+  Future<List<Map<String, dynamic>>> getTaskImages(String taskId) async {
+    try {
+      final data = await _queryWithRetry(
+        TaskQueries.getTaskImages,
+        variables: {'taskId': taskId},
+      );
+
+      if (data == null) return [];
+      final images = data['Attendance_TaskImage_GetByTask'] as List<dynamic>? ?? [];
+      return images.cast<Map<String, dynamic>>();
+    } catch (e, stackTrace) {
+      _logger.error('Failed to get task images', e, stackTrace);
+      if (e is TokenExpiredException) rethrow;
+      return [];
+    }
+  }
+
   /// Upload an image and add it to a task
   Future<Map<String, dynamic>?> addTaskImage({
     required String taskId,
@@ -716,7 +774,7 @@ class GraphqlApiService {
             'base64': base64String,
             'filename': filename,
             'contentType': contentType,
-            'folder': 'TASK_IMAGES',
+            'folder': 'ATTENDANCE',
           },
         },
       );
@@ -726,8 +784,10 @@ class GraphqlApiService {
       }
 
       final uploadResult = uploadData['Storage_UploadImageWithThumbnail'] as Map<String, dynamic>;
-      final imageUrl = uploadResult['url'] as String;
-      final thumbnailUrl = uploadResult['thumbnailUrl'] as String?;
+      final urlField = uploadResult['url'];
+      final thumbField = uploadResult['thumbnailUrl'];
+      final imageUrl = (urlField is Map) ? urlField['url'] as String : urlField as String;
+      final thumbnailUrl = (thumbField is Map) ? thumbField['url'] as String? : thumbField as String?;
 
       // Step 2: Add image to task
       final addData = await _mutateWithRetry(
@@ -738,7 +798,6 @@ class GraphqlApiService {
             'imageUrl': imageUrl,
             if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
             if (caption != null) 'caption': caption,
-            'filename': filename,
             'mimeType': contentType,
             'fileSize': bytes.length,
           },

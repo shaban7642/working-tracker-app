@@ -342,6 +342,9 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
   final _taskExtractor = TaskExtractorService();
 
   final List<PlatformFile> _attachments = [];
+  // Existing images from the task (for edit mode) — each has {id, url}
+  List<Map<String, String>> _existingImages = [];
+  bool _isLoadingImages = false;
   bool _isSubmitting = false;
   bool _isRecording = false;
   bool _isExtractingTask = false;
@@ -361,6 +364,61 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
     if (widget.isEditMode && widget.taskToEdit != null) {
       _titleController.text = widget.taskToEdit!.taskName;
       _descriptionController.text = widget.taskToEdit!.taskDescription;
+      _loadExistingImages();
+    }
+  }
+
+  /// Fetch existing images for the task being edited
+  Future<void> _loadExistingImages() async {
+    if (widget.taskToEdit == null) return;
+
+    setState(() => _isLoadingImages = true);
+
+    try {
+      final api = GraphqlApiService();
+      final images = await api.getTaskImages(widget.taskToEdit!.id);
+
+      final loaded = <Map<String, String>>[];
+      for (final img in images) {
+        final id = img['id']?.toString() ?? '';
+        final urlField = img['imageUrl'];
+        final url = (urlField is Map) ? urlField['url']?.toString() : urlField?.toString();
+        if (id.isNotEmpty && url != null && url.isNotEmpty) {
+          loaded.add({'id': id, 'url': url});
+        }
+      }
+
+      if (mounted) {
+        setState(() => _existingImages = loaded);
+      }
+    } catch (e) {
+      _logger.warning('Could not load existing task images: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingImages = false);
+      }
+    }
+  }
+
+  Future<void> _removeExistingImage(int index) async {
+    final image = _existingImages[index];
+    final imageId = image['id'] ?? '';
+
+    if (imageId.isNotEmpty) {
+      try {
+        final api = GraphqlApiService();
+        final success = await api.removeTaskImage(imageId);
+        if (success) {
+          setState(() => _existingImages.removeAt(index));
+        } else {
+          _showError('Failed to remove image');
+        }
+      } catch (e) {
+        _showError('Failed to remove image');
+      }
+    } else {
+      // No ID — just remove from display
+      setState(() => _existingImages.removeAt(index));
     }
   }
 
@@ -704,52 +762,57 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
   /// Handle editing an existing task
   Future<void> _handleEditTask(String taskName, String description) async {
     final task = widget.taskToEdit!;
+    final api = GraphqlApiService();
 
-    // Check if task has a reportId
-    if (task.reportId == null || task.reportId!.isEmpty) {
-      _showError('Cannot edit task: missing report ID');
-      setState(() => _isSubmitting = false);
-      return;
-    }
+    final titleChanged = taskName != task.taskName;
+    final descChanged = description != task.taskDescription;
+    final hasNewAttachments = _attachments.isNotEmpty;
 
     // Check if anything changed
-    if (taskName == task.taskName && description == task.taskDescription) {
-      // No changes, just close
-      if (mounted) {
-        Navigator.of(context).pop(false);
-      }
+    if (!titleChanged && !descChanged && !hasNewAttachments) {
+      if (mounted) Navigator.of(context).pop(false);
       return;
     }
 
     try {
-      // Update via API
-      final api = GraphqlApiService();
-      final updatedTaskData = await api.updateTask(
-        task.id,
-        title: taskName != task.taskName ? taskName : null,
-        description: description != task.taskDescription ? description : null,
-      );
-
-      if (updatedTaskData != null) {
-        // Create updated task object
-        final updatedTask = task.copyWith(
-          taskName: taskName,
-          taskDescription: description,
+      // Update title/description if changed
+      if (titleChanged || descChanged) {
+        final updatedTaskData = await api.updateTask(
+          task.id,
+          title: titleChanged ? taskName : null,
+          description: descChanged ? description : null,
         );
 
-        // Call the callback
-        if (widget.onTaskUpdated != null) {
-          widget.onTaskUpdated!(updatedTask);
+        if (updatedTaskData == null) {
+          throw Exception('Failed to update task');
         }
-
-        _logger.info('Task updated: ${task.id}');
-
-        if (mounted) {
-          Navigator.of(context).pop(true);
-        }
-      } else {
-        throw Exception('Failed to update task');
       }
+
+      // Upload new attachments
+      for (final attachment in _attachments) {
+        if (attachment.path != null) {
+          try {
+            await api.addTaskImage(
+              taskId: task.id,
+              imageFile: File(attachment.path!),
+            );
+            _logger.info('Uploaded attachment "${attachment.name}" for task ${task.id}');
+          } catch (e) {
+            _logger.warning('Failed to upload attachment "${attachment.name}": $e');
+          }
+        }
+      }
+
+      // Create updated task object and call callback
+      final updatedTask = task.copyWith(
+        taskName: taskName,
+        taskDescription: description,
+      );
+      widget.onTaskUpdated?.call(updatedTask);
+
+      _logger.info('Task updated: ${task.id}');
+
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       _logger.error('Failed to update task', e, null);
       if (mounted) {
@@ -767,11 +830,6 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
     });
 
     try {
-      final attachmentPaths = _attachments
-          .where((f) => f.path != null)
-          .map((f) => f.path!)
-          .toList();
-
       final taskName = _titleController.text.trim();
       final description = _descriptionController.text.trim();
 
@@ -796,10 +854,32 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
         throw Exception('No active time entry found');
       }
 
+      // Upload attachments first (matching mobile flow)
+      List<Map<String, dynamic>>? uploadedImages;
+      if (_attachments.isNotEmpty) {
+        uploadedImages = [];
+        final uploadFutures = _attachments
+            .where((f) => f.path != null)
+            .map((f) => api.uploadFileToStorage(File(f.path!)));
+        final results = await Future.wait(uploadFutures);
+
+        for (int i = 0; i < results.length; i++) {
+          final uploadResult = results[i];
+          if (uploadResult != null) {
+            uploadedImages.add(uploadResult);
+            _logger.info('Uploaded "${_attachments[i].name}" to storage');
+          } else {
+            _logger.warning('Failed to upload "${_attachments[i].name}"');
+          }
+        }
+      }
+
+      // Create task with images inline
       final result = await api.createTask(
         timeEntryId: timeEntryId,
         title: taskName,
         description: description,
+        images: uploadedImages,
       );
 
       if (result == null) {
@@ -1112,21 +1192,91 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                 ),
                 const SizedBox(height: 20),
 
-                // Attachments (only show when adding new task, not when editing)
-                if (!widget.isEditMode) ...[
-                  const Text(
-                    'Attachments',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                // Attachments
+                const Text(
+                  'Attachments',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Existing images (edit mode) — loaded from API
+                if (_isLoadingImages)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                if (_existingImages.isNotEmpty) ...[
+                  SizedBox(
+                    height: 70,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _existingImages.length,
+                      separatorBuilder: (context, index) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final image = _existingImages[index];
+                        return Stack(
+                          children: [
+                            Container(
+                              width: 70,
+                              height: 70,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                color: const Color(0xFF2A2A2A),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: Image.network(
+                                  image['url']!,
+                                  fit: BoxFit.cover,
+                                  width: 70,
+                                  height: 70,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(Icons.broken_image, size: 24, color: Colors.white38),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (image['id']!.isNotEmpty)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    onTap: () => _removeExistingImage(index),
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.errorColor,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                 ],
 
-                // Attachment previews (only when not in edit mode)
-                if (!widget.isEditMode && _attachments.isNotEmpty) ...[
+                // New attachment previews
+                if (_attachments.isNotEmpty) ...[
                   SizedBox(
                     height: 70,
                     child: ListView.separated(
@@ -1215,8 +1365,8 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                   const SizedBox(height: 12),
                 ],
 
-                // File picker and Screenshot buttons (only when not in edit mode)
-                if (!widget.isEditMode && _attachments.length < maxFiles)
+                // File picker and Screenshot buttons
+                if (_attachments.length < maxFiles)
                   Row(
                     children: [
                       // File picker button
@@ -1312,7 +1462,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
                       ),
                     ],
                   ),
-                if (!widget.isEditMode && _attachments.length < maxFiles)
+                if (_attachments.length < maxFiles)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(

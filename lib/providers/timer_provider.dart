@@ -294,8 +294,8 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
               name: projectName,
               createdAt: DateTime.now(),
               projectImage: projectField is Map
-                  ? (projectField['imageThumbnailUrl'] as String? ??
-                      projectField['imageUrl'] as String? ??
+                  ? (Project.extractUrl(projectField['imageThumbnailUrl']) ??
+                      Project.extractUrl(projectField['imageUrl']) ??
                       projectField['projectImage'] as String?)
                   : null,
             );

@@ -47,11 +47,11 @@ void main(List<String> args) async {
 
       // Auth screens: window IS the card, tight fit
       // Dashboard: larger for new project card UI
-      final windowSize = isLoggedIn ? const Size(420, 800) : const Size(420, 400);
+      final windowSize = isLoggedIn ? const Size(420, 800) : const Size(380, 340);
 
       WindowOptions windowOptions = WindowOptions(
         size: windowSize,
-        minimumSize: isLoggedIn ? const Size(420, 800) : const Size(420, 400),
+        minimumSize: isLoggedIn ? const Size(420, 800) : const Size(380, 340),
         center: true,
         backgroundColor: AppTheme.surfaceColor,
         skipTaskbar: false,

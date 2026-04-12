@@ -124,6 +124,14 @@ class User extends HiveObject {
     );
   }
 
+  /// Extract URL from a SignedFile object or plain string
+  static String? _extractUrl(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value.isEmpty ? null : value;
+    if (value is Map) return value['url'] as String?;
+    return null;
+  }
+
   /// Build full name from firstName and lastName
   static String? _buildFullName(String? firstName, String? lastName) {
     if (firstName == null && lastName == null) return null;
@@ -158,7 +166,7 @@ class User extends HiveObject {
       role: profile['designation'] as String?,
       permissions: null,
       additionalPermissions: null,
-      avatar: profile['professionalImageUrl'] as String?,
+      avatar: _extractUrl(profile['professionalImageUrl']),
     );
   }
 

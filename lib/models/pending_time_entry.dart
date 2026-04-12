@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'project.dart';
 
 /// Model representing a time entry from previous days that needs task submission.
 /// Used in the Pending Tasks dialog to show entries with taskSubmitted = false.
@@ -172,7 +173,7 @@ class PendingTimeEntry {
       projectName:
           project?['name'] as String? ?? json['projectName'] as String? ?? '',
       projectImage: project?['projectImage'] as String? ??
-          project?['imageUrl'] as String? ??
+          Project.extractUrl(project?['imageUrl']) ??
           json['projectImage'] as String?,
       startedAt: startedAt,
       endedAt: endedAt,

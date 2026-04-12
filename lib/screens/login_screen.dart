@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../services/window_service.dart';
 import '../widgets/window_controls.dart';
 import 'dashboard_screen.dart';
+import 'email_entry_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -170,13 +171,62 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
           const SizedBox(height: 40),
 
-          // SSO Sign In button
+          // Sign in with Email button
           SizedBox(
             height: 50,
-            child: ElevatedButton.icon(
+            child: ElevatedButton(
+              onPressed: _isLoading
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const EmailEntryScreen(),
+                        ),
+                      );
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.email_outlined, size: 20, color: Colors.black),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Sign in with Email',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Sign in with Outlook button
+          SizedBox(
+            height: 50,
+            child: ElevatedButton(
               onPressed: _isLoading ? null : _handleSSOLogin,
-              icon: const Icon(Icons.login, size: 20),
-              label: _isLoading
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
+              ),
+              child: _isLoading
                   ? const SizedBox(
                       height: 20,
                       width: 20,
@@ -185,27 +235,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: Colors.black,
                       ),
                     )
-                  : const Text(
-                      'Sign In with SSO',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CustomPaint(
+                            painter: _MicrosoftLogoPainter(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Sign in with Outlook',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-                disabledBackgroundColor: Colors.white.withValues(alpha: 0.5),
-              ),
             ),
           ),
 
-          // Dev login section (debug mode only)
-          if (kDebugMode) ...[
+          // Dev login section (hidden for now)
+          if (false) ...[
             const SizedBox(height: 24),
             Divider(color: Colors.white.withValues(alpha: 0.2)),
             const SizedBox(height: 8),
@@ -255,6 +309,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _devEmailController.dispose();
+    super.dispose();
   }
 
   Widget _buildWaitingForm() {
@@ -349,4 +409,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ],
     );
   }
+}
+
+/// Custom painter for Microsoft logo (4 colored squares)
+class _MicrosoftLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double squareSize = size.width / 2 - 1;
+    const double gap = 2;
+
+    // Red square (top-left)
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, squareSize, squareSize),
+      Paint()..color = const Color(0xFFF25022),
+    );
+
+    // Green square (top-right)
+    canvas.drawRect(
+      Rect.fromLTWH(squareSize + gap, 0, squareSize, squareSize),
+      Paint()..color = const Color(0xFF7FBA00),
+    );
+
+    // Blue square (bottom-left)
+    canvas.drawRect(
+      Rect.fromLTWH(0, squareSize + gap, squareSize, squareSize),
+      Paint()..color = const Color(0xFF00A4EF),
+    );
+
+    // Yellow square (bottom-right)
+    canvas.drawRect(
+      Rect.fromLTWH(squareSize + gap, squareSize + gap, squareSize, squareSize),
+      Paint()..color = const Color(0xFFFFB900),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

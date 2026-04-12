@@ -5,6 +5,7 @@ import '../core/utils/date_time_utils.dart';
 import '../models/project.dart';
 import '../models/report_task.dart';
 import '../core/extensions/context_extensions.dart';
+import '../services/graphql_api_service.dart';
 import 'add_task_dialog.dart';
 import 'cached_project_image.dart';
 
@@ -20,6 +21,7 @@ class ProjectListCard extends ConsumerStatefulWidget {
   final VoidCallback? onPauseTimer;
   final VoidCallback? onResumeTimer;
   final bool isLoading;
+  final VoidCallback? onTasksChanged;
 
   const ProjectListCard({
     super.key,
@@ -32,6 +34,7 @@ class ProjectListCard extends ConsumerStatefulWidget {
     this.onPauseTimer,
     this.onResumeTimer,
     this.isLoading = false,
+    this.onTasksChanged,
   });
 
   @override
@@ -40,6 +43,7 @@ class ProjectListCard extends ConsumerStatefulWidget {
 
 class _ProjectListCardState extends ConsumerState<ProjectListCard> {
   bool _isExpanded = false;
+  final _api = GraphqlApiService();
 
   Future<void> _addTask() async {
     final result = await AddTaskSheet.show(
@@ -391,6 +395,20 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
     );
   }
 
+  Future<void> _editTask(ReportTask task) async {
+    final result = await AddTaskSheet.showEdit(
+      context: context,
+      projectId: widget.project.id,
+      projectName: widget.project.name,
+      taskToEdit: task,
+      onTaskUpdated: (_) => widget.onTasksChanged?.call(),
+    );
+
+    if (result == true && mounted) {
+      widget.onTasksChanged?.call();
+    }
+  }
+
   Widget _buildTaskItem(ReportTask task) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -409,14 +427,87 @@ class _ProjectListCardState extends ConsumerState<ProjectListCard> {
           ),
           // Task content
           Expanded(
-            child: Text(
-              task.taskName,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.white,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  task.taskName,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+                if (task.taskDescription.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    task.taskDescription,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Edit button
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => _editTask(task),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.edit, size: 14, color: Color(0xFFFFC107)),
               ),
             ),
+          ),
+          // Delete button
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => _confirmDelete(task),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Icons.delete_outline, size: 14, color: AppTheme.errorColor),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(ReportTask task) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Delete Task', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+        content: Text(
+          'Are you sure you want to delete "${task.taskName}"? This action cannot be undone.',
+          style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final success = await _api.deleteTask(task.id);
+              if (success && mounted) {
+                widget.onTasksChanged?.call();
+                context.showSuccessSnackBar('Task deleted');
+              } else if (mounted) {
+                context.showErrorSnackBar('Failed to delete task');
+              }
+            },
+            child: Text('Delete', style: TextStyle(color: AppTheme.errorColor, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

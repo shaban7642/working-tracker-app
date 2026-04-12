@@ -230,6 +230,7 @@ class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog>
               if (taskProjectId.isNotEmpty && projectMap.containsKey(taskProjectId)) {
                 final existing = projectMap[taskProjectId]!;
                 final submittedTask = SubmittedTaskInfo(
+                  id: task['id']?.toString(),
                   taskName: taskName,
                   description: task['description']?.toString() ?? '',
                   submittedAt: DateTime.tryParse(task['createdAt']?.toString() ?? '') ?? DateTime.now(),
@@ -240,6 +241,7 @@ class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog>
                 // Task exists but project not in time entries - still show it
                 final projectName = _extractTaskProjectName(task);
                 final submittedTask = SubmittedTaskInfo(
+                  id: task['id']?.toString(),
                   taskName: taskName,
                   description: task['description']?.toString() ?? '',
                   submittedAt: DateTime.tryParse(task['createdAt']?.toString() ?? '') ?? DateTime.now(),
@@ -376,9 +378,11 @@ class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog>
     final project = entry['project'];
     if (project is Map) {
       // Try different possible field names for project image
+      final imgUrl = project['imageUrl'];
+      final resolvedUrl = (imgUrl is Map) ? imgUrl['url']?.toString() : imgUrl?.toString();
       return project['projectImage']?.toString() ??
           project['image']?.toString() ??
-          project['imageUrl']?.toString() ??
+          resolvedUrl ??
           project['logo']?.toString() ??
           project['avatar']?.toString() ??
           project['picture']?.toString();
@@ -414,6 +418,71 @@ class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog>
       });
     } catch (e) {
       _logger.error('Failed to delete local task after submission', e, null);
+    }
+  }
+
+  /// Called when a submitted task is updated
+  Future<void> _onTaskUpdated(int projectIndex, SubmittedTaskInfo task, String newTitle, String newDescription) async {
+    if (task.id == null) return;
+
+    try {
+      final result = await _api.updateTask(task.id!, title: newTitle, description: newDescription);
+      if (result != null) {
+        _logger.info('Task "${task.taskName}" updated to "$newTitle"');
+        setState(() {
+          final project = _projects[projectIndex];
+          final updatedTasks = project.submittedTasks.map((t) {
+            if (t.id == task.id) {
+              return t.copyWith(taskName: newTitle, description: newDescription);
+            }
+            return t;
+          }).toList();
+          _projects[projectIndex] = project.copyWith(submittedTasks: updatedTasks);
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to update task'), backgroundColor: AppTheme.errorColor),
+          );
+        }
+      }
+    } catch (e) {
+      _logger.error('Failed to update task', e, null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString().replaceFirst("Exception: ", "")}'), backgroundColor: AppTheme.errorColor),
+        );
+      }
+    }
+  }
+
+  /// Called when a submitted task is deleted
+  Future<void> _onTaskDeleted(int projectIndex, SubmittedTaskInfo task) async {
+    if (task.id == null) return;
+
+    try {
+      final success = await _api.deleteTask(task.id!);
+      if (success) {
+        _logger.info('Task "${task.taskName}" deleted');
+        setState(() {
+          final project = _projects[projectIndex];
+          final updatedTasks = project.submittedTasks.where((t) => t.id != task.id).toList();
+          _projects[projectIndex] = project.copyWith(submittedTasks: updatedTasks);
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete task'), backgroundColor: AppTheme.errorColor),
+          );
+        }
+      }
+    } catch (e) {
+      _logger.error('Failed to delete task', e, null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString().replaceFirst("Exception: ", "")}'), backgroundColor: AppTheme.errorColor),
+        );
+      }
     }
   }
 
@@ -645,6 +714,8 @@ class _MultiProjectTaskDialogState extends ConsumerState<MultiProjectTaskDialog>
               initiallyExpanded: !_projects[index].hasTask || _projects[index].pendingCount > 0,
               onTaskSubmitted: (task) => _onTaskSubmitted(index, task),
               onPendingTaskSubmitted: (localTaskId) => _onPendingTaskSubmitted(index, localTaskId),
+              onTaskUpdated: (task, newTitle, newDesc) => _onTaskUpdated(index, task, newTitle, newDesc),
+              onTaskDeleted: (task) => _onTaskDeleted(index, task),
             );
           }),
         ],
