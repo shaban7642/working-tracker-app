@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
@@ -25,6 +26,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
   final _windowService = WindowService();
   bool _isLoading = false;
   bool _showEmailSuggestions = false;
+  Timer? _hideSuggestionsTimer;
 
   @override
   void initState() {
@@ -36,6 +38,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
 
   @override
   void dispose() {
+    _hideSuggestionsTimer?.cancel();
     _emailController.removeListener(_onEmailChanged);
     _emailFocusNode.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
@@ -66,10 +69,17 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
 
   void _onEmailFocusChanged() {
     if (!_emailFocusNode.hasFocus) {
-      setState(() {
-        _showEmailSuggestions = false;
+      // Delay hiding to allow tap events on suggestion chips to fire first.
+      _hideSuggestionsTimer?.cancel();
+      _hideSuggestionsTimer = Timer(const Duration(milliseconds: 200), () {
+        if (mounted) {
+          setState(() {
+            _showEmailSuggestions = false;
+          });
+        }
       });
     } else {
+      _hideSuggestionsTimer?.cancel();
       if (_emailController.text.isNotEmpty) {
         _emailController.selection = TextSelection(
           baseOffset: 0,
@@ -81,6 +91,7 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
   }
 
   void _selectEmailDomain(String domain) {
+    _hideSuggestionsTimer?.cancel();
     final text = _emailController.text;
     final atIndex = text.indexOf('@');
 

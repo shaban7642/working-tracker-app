@@ -2,14 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:screen_capturer/screen_capturer.dart';
-import 'package:image/image.dart' as img;
 import '../core/theme/app_theme.dart';
 import '../providers/task_provider.dart';
 import '../providers/project_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/report_submission_service.dart';
+import '../services/screenshot_service.dart';
 import '../services/logger_service.dart';
 import '../models/task_submission.dart';
 import 'gradient_button.dart';
@@ -187,41 +185,17 @@ class _TaskFormWidgetState extends ConsumerState<TaskFormWidget> {
 
   Future<void> _takeScreenshot() async {
     try {
-      // Minimize the window before taking screenshot
-      await windowManager.minimize();
-
-      // Wait a moment for the window to minimize
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // Use screen_capturer for cross-platform support (Windows, macOS, Linux)
-      CapturedData? capturedData = await screenCapturer.capture(
-        mode: CaptureMode.region, // Interactive region selection
-      );
-
-      // Restore the window after screenshot
-      await windowManager.restore();
-      await windowManager.focus();
-
-      if (capturedData != null && capturedData.imageBytes != null) {
-        // Convert PNG to JPEG for smaller file size
-        final image = img.decodeImage(capturedData.imageBytes!);
-        if (image == null) {
-          throw Exception('Failed to decode screenshot image');
-        }
-        final jpegBytes = img.encodeJpg(image, quality: 85);
-
-        // Save to temp file
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final tempDir = Directory.systemTemp;
-        final screenshotPath = '${tempDir.path}/screenshot_$timestamp.jpg';
+      final screenshotPath = await ScreenshotService().takeScreenshot();
+      if (screenshotPath != null) {
         final file = File(screenshotPath);
-        await file.writeAsBytes(jpegBytes);
+        final fileSize = await file.length();
+        final fileName = screenshotPath.split('/').last;
 
         setState(() {
           _attachments.add(PlatformFile(
             path: screenshotPath,
-            name: 'screenshot_$timestamp.jpg',
-            size: jpegBytes.length,
+            name: fileName,
+            size: fileSize,
           ));
         });
 
@@ -230,10 +204,6 @@ class _TaskFormWidgetState extends ConsumerState<TaskFormWidget> {
         }
       }
     } catch (e) {
-      // Make sure to restore window even if there's an error
-      await windowManager.restore();
-      await windowManager.focus();
-
       _logger.error('Error taking screenshot', e, null);
       if (mounted) {
         _showError('Error taking screenshot: $e');

@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:screen_capturer/screen_capturer.dart';
-import 'package:image/image.dart' as img;
 import '../core/extensions/context_extensions.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/date_time_utils.dart';
@@ -16,6 +13,7 @@ import '../providers/task_provider.dart';
 import '../providers/timer_provider.dart';
 import '../services/graphql_api_service.dart';
 import '../services/report_submission_service.dart';
+import '../services/screenshot_service.dart';
 import '../services/window_service.dart';
 import '../widgets/gradient_button.dart';
 
@@ -290,43 +288,8 @@ class _SubmissionFormScreenState
     int taskIndex,
   ) async {
     try {
-      // Minimize the window before taking screenshot
-      await windowManager.minimize();
-
-      // Wait a moment for the window to minimize
-      await Future.delayed(
-        const Duration(milliseconds: 300),
-      );
-
-      // Use screen_capturer for cross-platform support (Windows, macOS, Linux)
-      CapturedData? capturedData = await screenCapturer
-          .capture(
-            mode: CaptureMode
-                .region, // Interactive region selection
-          );
-
-      // Restore the window after screenshot
-      await windowManager.restore();
-      await windowManager.focus();
-
-      if (capturedData != null &&
-          capturedData.imageBytes != null) {
-        // Convert PNG to JPEG for smaller file size
-        final image = img.decodeImage(capturedData.imageBytes!);
-        if (image == null) {
-          throw Exception('Failed to decode screenshot image');
-        }
-        final jpegBytes = img.encodeJpg(image, quality: 85);
-
-        // Save to temp file
-        final timestamp =
-            DateTime.now().millisecondsSinceEpoch;
-        final tempDir = Directory.systemTemp;
-        final screenshotPath =
-            '${tempDir.path}/screenshot_$timestamp.jpg';
-        final file = File(screenshotPath);
-        await file.writeAsBytes(jpegBytes);
-
+      final screenshotPath = await ScreenshotService().takeScreenshot();
+      if (screenshotPath != null) {
         setState(() {
           _projectTasks[projectId]![taskIndex].attachments
               .add(screenshotPath);
@@ -338,10 +301,6 @@ class _SubmissionFormScreenState
         }
       }
     } catch (e) {
-      // Make sure to restore window even if there's an error
-      await windowManager.restore();
-      await windowManager.focus();
-
       if (mounted) {
         context.showErrorSnackBar(
           'Error taking screenshot: $e',
