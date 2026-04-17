@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/utils/date_parsing.dart';
 import 'time_entry.dart';
 
 part 'report.g.dart';
@@ -134,14 +135,14 @@ class Report extends HiveObject {
     return Report(
       id: json['id'] as String,
       userId: json['userId'] as String,
-      startDate: DateTime.parse(json['startDate'] as String),
-      endDate: DateTime.parse(json['endDate'] as String),
+      startDate: parseUtcDateTime(json['startDate'] as String),
+      endDate: parseUtcDateTime(json['endDate'] as String),
       timeEntryIds: List<String>.from(json['timeEntryIds'] as List),
       totalDuration: Duration(seconds: json['totalDuration'] as int),
       projectBreakdown: (json['projectBreakdown'] as Map<String, dynamic>).map(
         (key, value) => MapEntry(key, Duration(seconds: value as int)),
       ),
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: parseUtcDateTime(json['createdAt'] as String),
       status: json['status'] as String? ?? 'draft',
       notes: json['notes'] as String?,
     );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/theme/app_theme.dart';
+import '../core/utils/date_parsing.dart';
 import '../models/report_task.dart';
 import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
@@ -191,7 +192,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   String _formatDate(String? isoDate) {
     if (isoDate == null) return '';
     try {
-      final date = DateTime.parse(isoDate);
+      final date = parseUtcDateTime(isoDate);
       return DateFormat('EEE, MMM d, yyyy').format(date);
     } catch (e) {
       return isoDate;
@@ -1344,10 +1345,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     final endTimeStr = task['endTime'] as String?;
     if (startTimeStr != null) {
       try {
-        final start = DateTime.parse(startTimeStr).toLocal();
+        final start = parseUtcDateTime(startTimeStr).toLocal();
         final startFmt = DateFormat('h:mm a').format(start);
         if (endTimeStr != null) {
-          final end = DateTime.parse(endTimeStr).toLocal();
+          final end = parseUtcDateTime(endTimeStr).toLocal();
           final endFmt = DateFormat('h:mm a').format(end);
           timeRange = '$startFmt - $endFmt';
         } else {

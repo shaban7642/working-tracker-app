@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../core/utils/date_parsing.dart';
 import 'project.dart';
 
 /// Model representing a DailyProjectWork record from previous days that needs task submission.
@@ -132,9 +133,9 @@ class PendingTimeEntry {
     // Parse date from attendance.date, or fallback to createdAt
     DateTime date;
     if (attendance != null && attendance['date'] != null) {
-      date = DateTime.parse(attendance['date'] as String);
+      date = parseUtcDateTime(attendance['date'] as String);
     } else if (json['createdAt'] != null) {
-      final createdAt = DateTime.parse(json['createdAt'] as String);
+      final createdAt = parseUtcDateTime(json['createdAt'] as String);
       date = DateTime(createdAt.year, createdAt.month, createdAt.day);
     } else {
       date = DateTime.now();

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(grep -E \"\\\\.dart$\")",
-      "mcp__chrome-devtools__take_screenshot"
+      "mcp__chrome-devtools__take_screenshot",
+      "Bash(find /Users/ahmedshaban/Developer/working-tracker-app/lib -type f -name \"*.dart\" -exec grep -H \"hours.*4\\\\|:.*4.*time\\\\|offset.*4\\\\|GMT\\\\|UTC.*4\" {} \\\\;)",
+      "Bash(find /Users/ahmedshaban/Developer/working-tracker-app -type f -name \"*.dart\" -exec grep -H \"add.*Duration\\\\|subtract.*Duration\" {} \\\\;)",
+      "Bash(find /Users/ahmedshaban/Developer/working-tracker-app/lib/models -type f -name \"*.dart\" -exec grep -l \"Duration\\\\|DateTime\" {} \\\\;)"
     ],
     "additionalDirectories": [
       "/Users/ahmedshaban/Developer/sscommunity-nest-backend/src/modules/attendance/dto/inputs"

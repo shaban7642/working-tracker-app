@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/utils/date_parsing.dart';
 
 part 'task.g.dart';
 
@@ -58,7 +59,7 @@ class Task extends HiveObject {
       id: json['id'] as String,
       projectId: json['projectId'] as String,
       taskName: json['taskName'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: parseUtcDateTime(json['createdAt'] as String),
       totalDuration: Duration(seconds: json['totalDuration'] as int? ?? 0),
     );
   }

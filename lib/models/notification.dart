@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:hive/hive.dart';
 import '../core/enums/notification_type.dart';
+import '../core/utils/date_parsing.dart';
 
 part 'notification.g.dart';
 
@@ -47,7 +48,7 @@ class AppNotification extends HiveObject {
       title: json['title'] as String?,
       body: json['body'] as String?,
       payloadJson: jsonEncode(json['payload'] ?? {}),
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: parseUtcDateTime(json['createdAt'] as String),
     );
   }
 

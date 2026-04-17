@@ -1,3 +1,5 @@
+import '../core/utils/date_parsing.dart';
+
 /// Represents a single attendance period (check-in to check-out session)
 class AttendancePeriod {
   final DateTime startTime;
@@ -19,9 +21,9 @@ class AttendancePeriod {
 
   factory AttendancePeriod.fromJson(Map<String, dynamic> json) {
     return AttendancePeriod(
-      startTime: DateTime.parse(json['startTime'].toString()).toLocal(),
+      startTime: parseUtcDateTime(json['startTime'].toString()).toLocal(),
       endTime: json['endTime'] != null
-          ? DateTime.parse(json['endTime'].toString()).toLocal()
+          ? parseUtcDateTime(json['endTime'].toString()).toLocal()
           : null,
     );
   }

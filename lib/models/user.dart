@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/utils/date_parsing.dart';
 
 part 'user.g.dart';
 
@@ -178,10 +179,10 @@ class User extends HiveObject {
       name: json['name'] as String,
       token: json['token'] as String?,
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'] as String)
+          ? parseUtcDateTime(json['createdAt'] as String)
           : DateTime.now(),
       lastLoginAt: json['lastLoginAt'] != null
-          ? DateTime.parse(json['lastLoginAt'] as String)
+          ? parseUtcDateTime(json['lastLoginAt'] as String)
           : null,
       role: json['role'] as String?,
       permissions: (json['permissions'] as List<dynamic>?)

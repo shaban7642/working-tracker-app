@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:graphql/client.dart';
+import '../core/utils/date_parsing.dart';
 import '../graphql/graphql_client.dart';
 import '../graphql/queries/subscription_queries.dart';
 import '../models/attendance_event.dart';
@@ -123,10 +124,10 @@ class SubscriptionService {
             projectId: data['projectId'] as String? ?? '',
             projectName: '',
             startedAt: data['startTime'] != null
-                ? DateTime.parse(data['startTime'] as String)
+                ? parseUtcDateTime(data['startTime'] as String)
                 : DateTime.now(),
             endedAt: data['endTime'] != null
-                ? DateTime.tryParse(data['endTime'] as String)
+                ? tryParseUtcDateTime(data['endTime'] as String)
                 : null,
             source: 'graphql',
             openStatus: eventType != TimeEntryEventType.ended,
@@ -293,7 +294,7 @@ class SubscriptionService {
             body: data['body'] as String?,
             payloadJson: data['data']?.toString() ?? '{}',
             createdAt: data['createdAt'] != null
-                ? DateTime.parse(data['createdAt'] as String)
+                ? parseUtcDateTime(data['createdAt'] as String)
                 : DateTime.now(),
           );
 

@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 
+import '../core/utils/date_parsing.dart';
 import 'attendance_period.dart';
 
 /// Justification for an attendance day (for late arrivals, etc.)
@@ -212,7 +213,7 @@ class AttendanceDay {
     final intervalsJson = json['intervals'] as List<dynamic>? ?? [];
     final intervals = intervalsJson.map((e) {
       if (e is DateTime) return e;
-      return DateTime.parse(e.toString()).toLocal();
+      return parseUtcDateTime(e.toString()).toLocal();
     }).toList();
 
     // Parse justification if present
@@ -236,9 +237,9 @@ class AttendanceDay {
       periods = (json['todaySessions'] as List).map((s) {
         final session = s as Map<String, dynamic>;
         return AttendancePeriod(
-          startTime: DateTime.parse(session['checkInAt'] as String).toLocal(),
+          startTime: parseUtcDateTime(session['checkInAt'] as String).toLocal(),
           endTime: session['checkOutAt'] != null
-              ? DateTime.parse(session['checkOutAt'] as String).toLocal()
+              ? parseUtcDateTime(session['checkOutAt'] as String).toLocal()
               : null,
         );
       }).toList();
@@ -256,11 +257,11 @@ class AttendanceDay {
     if (json['day'] != null) {
       day = json['day'] is DateTime
           ? json['day']
-          : DateTime.parse(json['day'].toString()).toLocal();
+          : parseUtcDateTime(json['day'].toString()).toLocal();
     } else if (json['date'] != null) {
       day = json['date'] is DateTime
           ? json['date']
-          : DateTime.parse(json['date'].toString()).toLocal();
+          : parseUtcDateTime(json['date'].toString()).toLocal();
     } else {
       day = DateTime.now();
     }

@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/utils/date_parsing.dart';
 
 part 'project.g.dart';
 
@@ -104,9 +105,9 @@ class Project extends HiveObject {
 
     try {
       if (json['createdAt'] != null) {
-        parsedCreatedAt = DateTime.parse(json['createdAt'] as String);
+        parsedCreatedAt = parseUtcDateTime(json['createdAt'] as String);
       } else if (json['created_at'] != null) {
-        parsedCreatedAt = DateTime.parse(json['created_at'] as String);
+        parsedCreatedAt = parseUtcDateTime(json['created_at'] as String);
       }
     } catch (e) {
       // If parsing fails, use current date
@@ -115,9 +116,9 @@ class Project extends HiveObject {
 
     try {
       if (json['deadline'] != null) {
-        parsedDeadline = DateTime.parse(json['deadline'] as String);
+        parsedDeadline = parseUtcDateTime(json['deadline'] as String);
       } else if (json['due_date'] != null) {
-        parsedDeadline = DateTime.parse(json['due_date'] as String);
+        parsedDeadline = parseUtcDateTime(json['due_date'] as String);
       }
     } catch (e) {
       // If parsing fails, leave as null
@@ -149,9 +150,9 @@ class Project extends HiveObject {
     DateTime? parsedLastActiveAt;
     try {
       if (json['lastActiveAt'] != null) {
-        parsedLastActiveAt = DateTime.parse(json['lastActiveAt'] as String);
+        parsedLastActiveAt = parseUtcDateTime(json['lastActiveAt'] as String);
       } else if (json['last_active_at'] != null) {
-        parsedLastActiveAt = DateTime.parse(json['last_active_at'] as String);
+        parsedLastActiveAt = parseUtcDateTime(json['last_active_at'] as String);
       }
     } catch (e) {
       parsedLastActiveAt = null;
@@ -229,7 +230,7 @@ class Project extends HiveObject {
     DateTime createdAt;
     try {
       createdAt = json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'] as String)
+          ? parseUtcDateTime(json['createdAt'] as String)
           : DateTime.now();
     } catch (e) {
       createdAt = DateTime.now();

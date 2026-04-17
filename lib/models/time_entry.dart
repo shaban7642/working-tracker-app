@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import '../core/utils/date_parsing.dart';
 
 part 'time_entry.g.dart';
 
@@ -97,9 +98,9 @@ class TimeEntry extends HiveObject {
       id: json['id'] as String,
       projectId: json['projectId'] as String,
       projectName: json['projectName'] as String,
-      startTime: DateTime.parse(json['startTime'] as String),
+      startTime: parseUtcDateTime(json['startTime'] as String),
       endTime: json['endTime'] != null
-          ? DateTime.parse(json['endTime'] as String)
+          ? parseUtcDateTime(json['endTime'] as String)
           : null,
       duration: Duration(seconds: json['duration'] as int? ?? 0),
       description: json['description'] as String?,

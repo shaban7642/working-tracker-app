@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/utils/date_parsing.dart';
 import '../models/attendance_event.dart';
 import '../models/time_entry_event.dart';
 import '../models/project.dart';
@@ -257,7 +258,7 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
         DateTime? startedAt;
         final startTimeField = openEntry['startTime'] ?? openEntry['startedAt'];
         if (startTimeField is String) {
-          final parsed = DateTime.tryParse(startTimeField);
+          final parsed = tryParseUtcDateTime(startTimeField);
           // Server returns UTC, convert to local
           startedAt = parsed?.toLocal();
         } else if (startTimeField is DateTime) {
