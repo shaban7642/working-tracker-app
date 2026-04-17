@@ -9,11 +9,7 @@ class TaskQueries {
           id
           imageUrl { url cacheKey }
         }
-        timeEntry {
-          description
-          id
-        }
-        timeEntryId
+        dailyProjectWorkId
         title
         updatedAt
       }
@@ -30,11 +26,7 @@ class TaskQueries {
           id
           imageUrl { url cacheKey }
         }
-        timeEntry {
-          description
-          id
-        }
-        timeEntryId
+        dailyProjectWorkId
         title
         updatedAt
       }
@@ -47,9 +39,9 @@ class TaskQueries {
     }
   ''';
 
-  static const String getByTimeEntry = r'''
-    query Attendance_Task_GetByTimeEntry($timeEntryId: String!) {
-      Attendance_Task_GetByTimeEntry(timeEntryId: $timeEntryId) {
+  static const String getByDailyProjectWork = r'''
+    query Attendance_Task_GetByDailyProjectWork($dailyProjectWorkId: String!) {
+      Attendance_Task_GetByDailyProjectWork(dailyProjectWorkId: $dailyProjectWorkId) {
         createdAt
         description
         id
@@ -57,11 +49,7 @@ class TaskQueries {
           id
           imageUrl { url cacheKey }
         }
-        timeEntry {
-          description
-          id
-        }
-        timeEntryId
+        dailyProjectWorkId
         title
         updatedAt
       }

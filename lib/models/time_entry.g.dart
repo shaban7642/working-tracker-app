@@ -25,13 +25,14 @@ class TimeEntryAdapter extends TypeAdapter<TimeEntry> {
       duration: fields[5] as Duration,
       description: fields[6] as String?,
       isRunning: fields[7] as bool,
+      dailyProjectWorkId: fields[8] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, TimeEntry obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +48,9 @@ class TimeEntryAdapter extends TypeAdapter<TimeEntry> {
       ..writeByte(6)
       ..write(obj.description)
       ..writeByte(7)
-      ..write(obj.isRunning);
+      ..write(obj.isRunning)
+      ..writeByte(8)
+      ..write(obj.dailyProjectWorkId);
   }
 
   @override

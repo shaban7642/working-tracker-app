@@ -250,7 +250,7 @@ class SubscriptionService {
             type: eventType,
             id: data['taskId'] as String? ?? '',
             projectId: data['projectId'] as String? ?? '',
-            reportId: data['timeEntryId'] as String? ?? '',
+            reportId: data['dailyProjectWorkId'] as String? ?? '',
             title: data['title'] as String? ?? '',
             description: '',
             imageCount: 0,

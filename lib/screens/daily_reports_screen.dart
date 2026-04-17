@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:window_manager/window_manager.dart';
 import '../core/theme/app_theme.dart';
+import '../models/report_task.dart';
 import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
+import '../widgets/add_task_dialog.dart';
 import '../widgets/window_controls.dart';
 
 class DailyReportsScreen extends StatefulWidget {
@@ -73,10 +75,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     });
 
     try {
-      final result = await _api.getMyDailyReports(
-        from: _fromDate,
-        to: _toDate,
-      );
+      final result = await _api.getMyDailyReports(from: _fromDate, to: _toDate);
 
       final reports = (result['reports'] as List)
           .map((e) => e as Map<String, dynamic>)
@@ -108,10 +107,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     try {
       // getMyDailyReports returns all data at once (no server-side pagination)
       // so we just call it again with the same filters
-      final result = await _api.getMyDailyReports(
-        from: _fromDate,
-        to: _toDate,
-      );
+      final result = await _api.getMyDailyReports(from: _fromDate, to: _toDate);
 
       final reports = (result['reports'] as List)
           .map((e) => e as Map<String, dynamic>)
@@ -171,7 +167,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       isScrollControlled: true,
       builder: (context) => _DateRangePickerSheet(
         initialRange: _fromDate != null && _toDate != null
-            ? DateTimeRange(start: _fromDate!, end: _toDate!.subtract(const Duration(days: 1)))
+            ? DateTimeRange(
+                start: _fromDate!,
+                end: _toDate!.subtract(const Duration(days: 1)),
+              )
             : DateTimeRange(
                 start: DateTime.now().subtract(const Duration(days: 7)),
                 end: DateTime.now(),
@@ -216,10 +215,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 decoration: const BoxDecoration(
                   color: Color(0xFF1E1E1E),
                   border: Border(
-                    bottom: BorderSide(
-                      color: Color(0xFF333333),
-                      width: 1,
-                    ),
+                    bottom: BorderSide(color: Color(0xFF333333), width: 1),
                   ),
                 ),
                 child: Column(
@@ -283,13 +279,20 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     ),
 
                     // Selected date range indicator
-                    if (_fromDate != null && _toDate != null && _activeFilter != 'all') ...[
+                    if (_fromDate != null &&
+                        _toDate != null &&
+                        _activeFilter != 'all') ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: AppTheme.successColor.withValues(alpha: 0.15),
+                            color: AppTheme.successColor.withValues(
+                              alpha: 0.15,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -328,9 +331,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
               ),
 
               // Content
-              Expanded(
-                child: _buildContent(),
-              ),
+              Expanded(child: _buildContent()),
             ],
           ),
           // Top bar with draggable area and window controls
@@ -345,17 +346,12 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                 Expanded(
                   child: GestureDetector(
                     onPanStart: (_) => windowManager.startDragging(),
-                    child: Container(
-                      color: Colors.transparent,
-                    ),
+                    child: Container(color: Colors.transparent),
                   ),
                 ),
                 // Window control buttons (minimize, close)
                 const Padding(
-                  padding: EdgeInsets.only(
-                    top: 8,
-                    right: 8,
-                  ),
+                  padding: EdgeInsets.only(top: 8, right: 8),
                   child: WindowControls(),
                 ),
               ],
@@ -437,9 +433,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   Widget _buildContent() {
     if (_isLoading && _reports.isEmpty) {
       return Center(
-        child: CircularProgressIndicator(
-          color: AppTheme.successColor,
-        ),
+        child: CircularProgressIndicator(color: AppTheme.successColor),
       );
     }
 
@@ -510,7 +504,10 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             GestureDetector(
               onTap: () => _loadReports(refresh: true),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppTheme.successColor,
                   borderRadius: BorderRadius.circular(10),
@@ -600,10 +597,11 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
   }
 
   /// Lazy-load tasks for a specific date when user expands a report.
-  /// Step 1: Get daily report (items with timeEntryId, projectName, tasks[id,title,desc])
-  /// Step 2: For each time entry that has tasks, fetch full task data with images
+  /// Step 1: Get daily report (items with dailyProjectWorkId, projectName, tasks[id,title,desc])
+  /// Step 2: For each daily project work that has tasks, fetch full task data with images
   Future<void> _loadTasksForDate(String dateStr) async {
-    if (_dayTasks.containsKey(dateStr) || _loadingTasks.contains(dateStr)) return;
+    if (_dayTasks.containsKey(dateStr) || _loadingTasks.contains(dateStr))
+      return;
 
     setState(() => _loadingTasks.add(dateStr));
 
@@ -615,25 +613,27 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       if (dailyReport != null) {
         final items = dailyReport['items'] as List<dynamic>? ?? [];
 
-        // Collect time entry IDs that have tasks, so we can fetch images
-        final timeEntryIds = <String>[];
+        // Collect dailyProjectWork IDs that have tasks, so we can fetch images
+        final dpwIds = <String>[];
         for (final item in items) {
           final itemMap = item as Map<String, dynamic>;
-          final timeEntryId = itemMap['timeEntryId'] as String?;
+          final dpwId = itemMap['dailyProjectWorkId'] as String?;
           final itemTasks = itemMap['tasks'] as List<dynamic>? ?? [];
-          if (timeEntryId != null && itemTasks.isNotEmpty) {
-            timeEntryIds.add(timeEntryId);
+          if (dpwId != null && itemTasks.isNotEmpty) {
+            dpwIds.add(dpwId);
           }
         }
 
-        // Fetch full task data (with images) for each time entry sequentially
-        final tasksByTimeEntry = <String, List<Map<String, dynamic>>>{};
-        for (final teId in timeEntryIds) {
+        // Fetch full task data (with images) for each daily project work sequentially
+        final tasksByDpw = <String, List<Map<String, dynamic>>>{};
+        for (final dpwId in dpwIds) {
           try {
-            final fullTasks = await _api.getTasksByTimeEntry(teId);
-            tasksByTimeEntry[teId] = fullTasks;
+            final fullTasks = await _api.getTasksByDailyProjectWork(dpwId);
+            tasksByDpw[dpwId] = fullTasks;
           } catch (e) {
-            _logger.warning('Failed to fetch tasks for time entry $teId: $e');
+            _logger.warning(
+              'Failed to fetch tasks for daily project work $dpwId: $e',
+            );
           }
         }
 
@@ -643,17 +643,20 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
           final startTime = itemMap['startTime'] as String?;
           final endTime = itemMap['endTime'] as String?;
           final hoursWorked = itemMap['hoursWorked'];
-          final description = itemMap['description'] as String?;
-          final timeEntryId = itemMap['timeEntryId'] as String?;
+          final dpwId = itemMap['dailyProjectWorkId'] as String?;
           final itemTasks = itemMap['tasks'] as List<dynamic>? ?? [];
 
-          if (itemTasks.isNotEmpty && timeEntryId != null) {
+          final projectId = itemMap['projectId'] as String? ?? '';
+
+          if (itemTasks.isNotEmpty && dpwId != null) {
             // Use full task data (with images) if available, fallback to basic data
-            final fullTasks = tasksByTimeEntry[timeEntryId];
+            final fullTasks = tasksByDpw[dpwId];
             if (fullTasks != null && fullTasks.isNotEmpty) {
               for (final task in fullTasks) {
                 final taskMap = Map<String, dynamic>.from(task);
-                taskMap['project'] = {'name': projectName};
+                taskMap['project'] = {'name': projectName, 'id': projectId};
+                taskMap['projectId'] = projectId;
+                taskMap['dailyProjectWorkId'] = dpwId;
                 taskMap['startTime'] = startTime;
                 taskMap['endTime'] = endTime;
                 taskMap['hoursWorked'] = hoursWorked;
@@ -662,27 +665,27 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
             } else {
               // Fallback: use basic task data from daily report
               for (final task in itemTasks) {
-                final taskMap = Map<String, dynamic>.from(task as Map<String, dynamic>);
-                taskMap['project'] = {'name': projectName};
+                final taskMap = Map<String, dynamic>.from(
+                  task as Map<String, dynamic>,
+                );
+                taskMap['project'] = {'name': projectName, 'id': projectId};
+                taskMap['projectId'] = projectId;
+                taskMap['dailyProjectWorkId'] = dpwId;
                 taskMap['startTime'] = startTime;
                 taskMap['endTime'] = endTime;
                 taskMap['hoursWorked'] = hoursWorked;
                 tasks.add(taskMap);
               }
             }
-          } else if (itemTasks.isEmpty) {
-            // No tasks for this time entry - show the time entry itself
-            tasks.add({
-              'title': description ?? 'No task submitted',
-              'description': '',
-              'project': {'name': projectName},
-              'startTime': startTime,
-              'endTime': endTime,
-              'hoursWorked': hoursWorked,
-              'isTimeEntryOnly': true,
-            });
           }
+
         }
+
+        // Always add a single "add task for this day" button at the bottom
+        tasks.add({'isNewDayPlaceholder': true, 'date': dateStr});
+      } else {
+        // No report data — still allow adding tasks
+        tasks.add({'isNewDayPlaceholder': true, 'date': dateStr});
       }
 
       if (mounted) {
@@ -702,9 +705,136 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
     }
   }
 
+  /// Reload tasks for a specific date (after add/edit/delete)
+  Future<void> _reloadTasksForDate(String dateStr) async {
+    _dayTasks.remove(dateStr);
+    _loadingTasks.remove(dateStr);
+    await _loadTasksForDate(dateStr);
+  }
+
+  /// Find the date string for a task (from _dayTasks map)
+  String? _findDateForTask(Map<String, dynamic> task) {
+    for (final entry in _dayTasks.entries) {
+      if (entry.value.contains(task)) return entry.key;
+    }
+    return null;
+  }
+
+  /// Add a task for a report item
+  Future<void> _addTaskForReport(Map<String, dynamic> item) async {
+    final dpwId = item['dailyProjectWorkId'] as String?;
+    final projectId = item['projectId'] as String? ?? '';
+    final projectName =
+        (item['project'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+
+    final result = await AddTaskSheet.show(
+      context: context,
+      projectId: projectId,
+      projectName: projectName,
+      entryIds: (dpwId != null && dpwId.isNotEmpty) ? [dpwId] : null,
+    );
+
+    if (result == true) {
+      final dateStr = _findDateForTask(item);
+      if (dateStr != null) {
+        await _reloadTasksForDate(dateStr);
+      }
+    }
+  }
+
+  /// Edit an existing task
+  Future<void> _editTask(Map<String, dynamic> task) async {
+    final projectId = task['projectId'] as String? ?? '';
+    final projectName =
+        (task['project'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+
+    final reportTask = ReportTask.fromJson(task);
+
+    final result = await AddTaskSheet.showEdit(
+      context: context,
+      projectId: projectId,
+      projectName: projectName,
+      taskToEdit: reportTask,
+      onTaskUpdated: (_) {},
+    );
+
+    if (result == true) {
+      final dateStr = _findDateForTask(task);
+      if (dateStr != null) {
+        await _reloadTasksForDate(dateStr);
+      }
+    }
+  }
+
+  /// Delete a task with confirmation
+  Future<void> _deleteTask(Map<String, dynamic> task) async {
+    final taskId = task['id'] as String? ?? task['_id'] as String? ?? '';
+    final taskName = task['title'] as String? ?? 'this task';
+
+    if (taskId.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Delete Task', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Are you sure you want to delete "$taskName"?',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final success = await _api.deleteTask(taskId);
+      if (success) {
+        _showSnackBar('Task deleted');
+        final dateStr = _findDateForTask(task);
+        if (dateStr != null) {
+          await _reloadTasksForDate(dateStr);
+        }
+      } else {
+        _showSnackBar('Failed to delete task', isError: true);
+      }
+    } catch (e) {
+      _showSnackBar('Error: $e', isError: true);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppTheme.errorColor : AppTheme.successColor,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Widget _buildReportCard(Map<String, dynamic> report) {
     final reportId = report['_id']?.toString() ?? '';
-    final reportDate = report['reportDate'] as String? ?? report['date'] as String?;
+    final reportDate =
+        report['reportDate'] as String? ?? report['date'] as String?;
     final totalTime = report['totalTime'] as String? ?? '';
     final checkIn = report['checkIn'] as String?;
     final checkOut = report['checkOut'] as String?;
@@ -741,10 +871,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFF333333),
-          width: 1,
-        ),
+        border: Border.all(color: const Color(0xFF333333), width: 1),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -875,7 +1002,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
 
                   // Expand indicator
                   Icon(
-                    isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
                     color: Colors.white.withValues(alpha: 0.5),
                     size: 24,
                   ),
@@ -895,10 +1024,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Divider(
-                          color: Color(0xFF333333),
-                          height: 1,
-                        ),
+                        const Divider(color: Color(0xFF333333), height: 1),
                         const SizedBox(height: 12),
 
                         // Tasks header
@@ -924,7 +1050,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
-                                  '${tasks.length}',
+                                  '${tasks.where((t) => t['isNewDayPlaceholder'] != true && t['isAddTaskPlaceholder'] != true).length}',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -945,7 +1071,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                               child: SizedBox(
                                 width: 20,
                                 height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             ),
                           )
@@ -962,7 +1090,15 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                             ),
                           )
                         else
-                          ...tasks.map((task) => _buildTaskItem(task)),
+                          ...tasks.map((task) {
+                            if (task['isNewDayPlaceholder'] == true) {
+                              return _buildNewDayAddTaskButton(task);
+                            }
+                            if (task['isAddTaskPlaceholder'] == true) {
+                              return _buildAddTaskButton(task);
+                            }
+                            return _buildTaskItem(task);
+                          }),
                       ],
                     ),
                   )
@@ -990,6 +1126,196 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
         })
         .where((url) => url.isNotEmpty)
         .toList();
+  }
+
+  /// Load all projects across all pages
+  Future<List<Map<String, dynamic>>> _loadAllProjects() async {
+    final allProjects = <Map<String, dynamic>>[];
+    int page = 1;
+    bool hasMore = true;
+
+    while (hasMore) {
+      final result = await _api.getProjectsPaginated(page: page, pageSize: 50);
+      allProjects.addAll(result.items);
+      hasMore = result.hasNextPage;
+      page++;
+    }
+
+    return allProjects;
+  }
+
+  /// Extract project image URL from raw project map
+  String? _extractProjectImage(Map<String, dynamic> project) {
+    // Prefer thumbnail, fallback to full image
+    final thumb = project['imageThumbnailUrl'];
+    final full = project['imageUrl'];
+    if (thumb is Map && thumb['url'] != null) return thumb['url'] as String;
+    if (full is Map && full['url'] != null) return full['url'] as String;
+    if (thumb is String) return thumb;
+    if (full is String) return full;
+    return project['projectImage'] as String?;
+  }
+
+  /// Show project selector then open AddTaskSheet for a day.
+  /// Shows all projects — the backend will auto-create a DPW if needed.
+  Future<void> _addTaskForNewDay(String dateStr) async {
+    if (!mounted) return;
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    // Step 1: Fetch daily report to get existing DPW IDs per project (if any)
+    final date = DateTime.parse(dateStr);
+    final dailyReport = await _api.getDailyReportByDate(date);
+    final dpwByProjectId = <String, String>{}; // projectId -> dpwId
+    final projectNamesFromReport = <String, String>{}; // projectId -> name
+
+    if (dailyReport != null) {
+      final items = dailyReport['items'] as List<dynamic>? ?? [];
+      for (final item in items) {
+        final itemMap = item as Map<String, dynamic>;
+        final pid = itemMap['projectId'] as String?;
+        final dpwId = itemMap['dailyProjectWorkId'] as String?;
+        final pName = itemMap['projectName'] as String?;
+        if (pid != null &&
+            pid.isNotEmpty &&
+            dpwId != null &&
+            dpwId.isNotEmpty) {
+          dpwByProjectId[pid] = dpwId;
+          if (pName != null) projectNamesFromReport[pid] = pName;
+        }
+      }
+    }
+
+    // Step 2: Load all projects — no filtering, any project is eligible
+    final allProjects = await _loadAllProjects();
+    if (!mounted) return;
+    Navigator.pop(context); // dismiss loading
+
+    if (allProjects.isEmpty) {
+      _showSnackBar('No projects found.', isError: true);
+      return;
+    }
+
+    // Step 3: Show project picker with images and search
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _ProjectSelectorSheet(
+        projects: allProjects,
+        extractImage: _extractProjectImage,
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+
+    final projectId =
+        selected['_id'] as String? ?? selected['id'] as String? ?? '';
+    final projectName =
+        selected['name'] as String? ?? projectNamesFromReport[projectId] ?? '';
+    final dpwId = dpwByProjectId[projectId];
+
+    // Step 4: Open the standard AddTaskSheet — pass dpwId if available, otherwise backend auto-creates
+    final result = await AddTaskSheet.show(
+      context: context,
+      projectId: projectId,
+      projectName: projectName,
+      entryIds: (dpwId != null && dpwId.isNotEmpty) ? [dpwId] : null,
+      reportDate: date,
+    );
+
+    if (result == true) {
+      await _reloadTasksForDate(dateStr);
+    }
+  }
+
+  Widget _buildNewDayAddTaskButton(Map<String, dynamic> item) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: InkWell(
+        onTap: () => _addTaskForNewDay(item['date'] as String),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFF7C6AFA).withValues(alpha: 0.3),
+            ),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.add_circle_outline,
+                size: 18,
+                color: Color(0xFF7C6AFA),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Add task for this day',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF7C6AFA),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddTaskButton(Map<String, dynamic> item) {
+    final projectName =
+        (item['project'] as Map<String, dynamic>?)?['name'] as String? ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: InkWell(
+        onTap: () => _addTaskForReport(item),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A2A2A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFF7C6AFA).withValues(alpha: 0.3),
+              style: BorderStyle.solid,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.add_circle_outline,
+                size: 16,
+                color: Color(0xFF7C6AFA),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Add task${projectName.isNotEmpty ? ' for $projectName' : ''}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF7C6AFA),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildTaskItem(Map<String, dynamic> task) {
@@ -1032,6 +1358,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       }
     }
 
+    final hasTaskId =
+        (task['id'] as String? ?? task['_id'] as String? ?? '').isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Container(
@@ -1061,7 +1390,7 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Project badge and time info row
+                      // Project badge, duration, and action buttons row
                       Row(
                         children: [
                           Container(
@@ -1070,7 +1399,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF7C6AFA).withValues(alpha: 0.15),
+                              color: const Color(
+                                0xFF7C6AFA,
+                              ).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -1092,7 +1423,9 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: AppTheme.successColor.withValues(alpha: 0.15),
+                                color: AppTheme.successColor.withValues(
+                                  alpha: 0.15,
+                                ),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Row(
@@ -1115,6 +1448,36 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                 ],
                               ),
                             ),
+                          // Edit & Delete buttons
+                          if (hasTaskId) ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => _editTask(task),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.edit_outlined,
+                                  size: 14,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () => _deleteTask(task),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  size: 14,
+                                  color: Colors.redAccent.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -1171,11 +1534,16 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                 width: 70,
                                 height: 70,
                                 margin: EdgeInsets.only(
-                                  right: index < _buildImageList(task).length - 1 ? 8 : 0,
+                                  right:
+                                      index < _buildImageList(task).length - 1
+                                      ? 8
+                                      : 0,
                                 ),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFF333333)),
+                                  border: Border.all(
+                                    color: const Color(0xFF333333),
+                                  ),
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(7),
@@ -1184,8 +1552,13 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Container(
                                       color: const Color(0xFF2A2A2A),
-                                      child: Icon(Icons.image_not_supported, size: 24,
-                                        color: Colors.white.withValues(alpha: 0.3)),
+                                      child: Icon(
+                                        Icons.image_not_supported,
+                                        size: 24,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1204,7 +1577,6 @@ class _DailyReportsScreenState extends State<DailyReportsScreen> {
       ),
     );
   }
-
 }
 
 /// Custom date range picker bottom sheet
@@ -1363,7 +1735,10 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                   child: GestureDetector(
                     onTap: () => setState(() => _selectingStart = true),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 12,
+                      ),
                       decoration: BoxDecoration(
                         color: _selectingStart
                             ? AppTheme.successColor.withValues(alpha: 0.2)
@@ -1386,7 +1761,9 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: _selectingStart ? AppTheme.successColor : Colors.white,
+                              color: _selectingStart
+                                  ? AppTheme.successColor
+                                  : Colors.white,
                             ),
                           ),
                         ],
@@ -1403,7 +1780,10 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                   child: GestureDetector(
                     onTap: () => setState(() => _selectingStart = false),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 12,
+                      ),
                       decoration: BoxDecoration(
                         color: !_selectingStart
                             ? AppTheme.successColor.withValues(alpha: 0.2)
@@ -1426,7 +1806,9 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: !_selectingStart ? AppTheme.successColor : Colors.white,
+                              color: !_selectingStart
+                                  ? AppTheme.successColor
+                                  : Colors.white,
                             ),
                           ),
                         ],
@@ -1496,18 +1878,20 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                  .map((day) => SizedBox(
-                        width: 36,
-                        child: Text(
-                          day,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.5),
-                          ),
+                  .map(
+                    (day) => SizedBox(
+                      width: 36,
+                      child: Text(
+                        day,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.5),
                         ),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -1553,9 +1937,9 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      Navigator.of(context).pop(
-                        DateTimeRange(start: _startDate, end: _endDate),
-                      );
+                      Navigator.of(
+                        context,
+                      ).pop(DateTimeRange(start: _startDate, end: _endDate));
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1585,8 +1969,16 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
   }
 
   Widget _buildCalendarGrid() {
-    final firstDayOfMonth = DateTime(_displayMonth.year, _displayMonth.month, 1);
-    final lastDayOfMonth = DateTime(_displayMonth.year, _displayMonth.month + 1, 0);
+    final firstDayOfMonth = DateTime(
+      _displayMonth.year,
+      _displayMonth.month,
+      1,
+    );
+    final lastDayOfMonth = DateTime(
+      _displayMonth.year,
+      _displayMonth.month + 1,
+      0,
+    );
     final firstWeekday = firstDayOfMonth.weekday % 7; // Sunday = 0
     final daysInMonth = lastDayOfMonth.day;
 
@@ -1616,8 +2008,8 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
               color: isStartOrEnd
                   ? AppTheme.successColor
                   : isInRange
-                      ? AppTheme.successColor.withValues(alpha: 0.2)
-                      : Colors.transparent,
+                  ? AppTheme.successColor.withValues(alpha: 0.2)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: isToday && !isStartOrEnd
                   ? Border.all(color: AppTheme.successColor, width: 1.5)
@@ -1628,12 +2020,14 @@ class _DateRangePickerSheetState extends State<_DateRangePickerSheet> {
                 '$day',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isStartOrEnd || isToday ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: isStartOrEnd || isToday
+                      ? FontWeight.w600
+                      : FontWeight.w400,
                   color: isDisabled
                       ? Colors.white.withValues(alpha: 0.3)
                       : isStartOrEnd
-                          ? Colors.white
-                          : Colors.white,
+                      ? Colors.white
+                      : Colors.white,
                 ),
               ),
             ),
@@ -1737,6 +2131,168 @@ class _ExpandableDescriptionState extends State<_ExpandableDescription> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Project selector bottom sheet with search and images
+class _ProjectSelectorSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> projects;
+  final String? Function(Map<String, dynamic>) extractImage;
+
+  const _ProjectSelectorSheet({
+    required this.projects,
+    required this.extractImage,
+  });
+
+  @override
+  State<_ProjectSelectorSheet> createState() => _ProjectSelectorSheetState();
+}
+
+class _ProjectSelectorSheetState extends State<_ProjectSelectorSheet> {
+  final _searchController = TextEditingController();
+  List<Map<String, dynamic>> _filtered = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.projects;
+    _searchController.addListener(_onSearch);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearch() {
+    final query = _searchController.text.toLowerCase().trim();
+    setState(() {
+      if (query.isEmpty) {
+        _filtered = widget.projects;
+      } else {
+        _filtered = widget.projects.where((p) {
+          final name = (p['name'] as String? ?? '').toLowerCase();
+          return name.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      maxChildSize: 0.9,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Select Project (${widget.projects.length})',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Search field
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search projects...',
+                hintStyle: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: Colors.white.withValues(alpha: 0.3),
+                  size: 20,
+                ),
+                filled: true,
+                fillColor: const Color(0xFF2A2A2A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Project list
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              itemCount: _filtered.length,
+              itemBuilder: (_, i) {
+                final p = _filtered[i];
+                final name = p['name'] as String? ?? '';
+                final imageUrl = widget.extractImage(p);
+
+                return ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A2A),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: imageUrl != null && imageUrl.isNotEmpty
+                        ? Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Center(
+                              child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                style: const TextStyle(
+                                  color: Color(0xFF7C6AFA),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                color: Color(0xFF7C6AFA),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                  ),
+                  title: Text(
+                    name,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.pop(context, p),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

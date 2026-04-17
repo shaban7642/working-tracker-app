@@ -1,14 +1,12 @@
 import 'package:intl/intl.dart';
 import 'project.dart';
 
-/// Model representing a time entry from previous days that needs task submission.
-/// Used in the Pending Tasks dialog to show entries with taskSubmitted = false.
-///
-/// Note: Multiple entries from the same day/project may be merged by the backend,
-/// in which case [entryIds] contains all the original entry IDs.
+/// Model representing a DailyProjectWork record from previous days that needs task submission.
+/// Used in the Pending Tasks dialog to show entries with no tasks.
 class PendingTimeEntry {
-  final String id; // Primary ID (first entry or merged ID)
+  final String id; // DailyProjectWork ID
   final List<String> entryIds; // All entry IDs (for merged entries)
+  final String? dailyProjectWorkId; // DailyProjectWork ID for task creation
   final String projectId;
   final String projectName;
   final String? projectImage;
@@ -22,15 +20,16 @@ class PendingTimeEntry {
   const PendingTimeEntry({
     required this.id,
     this.entryIds = const [],
+    this.dailyProjectWorkId,
     required this.projectId,
     required this.projectName,
     this.projectImage,
     required this.startedAt,
     this.endedAt,
     required this.date,
-    required this.duration,
-    required this.taskSubmitted,
-    required this.openStatus,
+    this.duration = 0,
+    this.taskSubmitted = false,
+    this.openStatus = 'closed',
   });
 
   /// Get all entry IDs (returns [id] if entryIds is empty)
@@ -78,6 +77,7 @@ class PendingTimeEntry {
   PendingTimeEntry copyWith({
     String? id,
     List<String>? entryIds,
+    String? dailyProjectWorkId,
     String? projectId,
     String? projectName,
     String? projectImage,
@@ -91,6 +91,7 @@ class PendingTimeEntry {
     return PendingTimeEntry(
       id: id ?? this.id,
       entryIds: entryIds ?? this.entryIds,
+      dailyProjectWorkId: dailyProjectWorkId ?? this.dailyProjectWorkId,
       projectId: projectId ?? this.projectId,
       projectName: projectName ?? this.projectName,
       projectImage: projectImage ?? this.projectImage,
@@ -124,49 +125,24 @@ class PendingTimeEntry {
   factory PendingTimeEntry.fromJson(Map<String, dynamic> json) {
     // Handle both nested project object and flat structure
     final project = json['project'] as Map<String, dynamic>?;
+    final attendance = json['attendance'] as Map<String, dynamic>?;
 
-    // Parse entryIds - could be a list of strings or list of entry objects
-    List<String> entryIds = [];
-    if (json['entryIds'] != null && json['entryIds'] is List) {
-      entryIds = (json['entryIds'] as List).map((e) {
-        if (e is String) return e;
-        if (e is Map) return e['_id'] as String? ?? e['id'] as String? ?? '';
-        return '';
-      }).where((e) => e.isNotEmpty).toList();
-    }
+    final id = json['_id'] as String? ?? json['id'] as String? ?? '';
 
-    // Parse start/end times - GraphQL uses startTime/endTime, old API uses startedAt/endedAt
-    final startTimeStr = json['startTime'] as String? ?? json['startedAt'] as String?;
-    final endTimeStr = json['endTime'] as String? ?? json['endedAt'] as String?;
-
-    final startedAt = startTimeStr != null ? DateTime.parse(startTimeStr) : DateTime.now();
-    final endedAt = endTimeStr != null ? DateTime.parse(endTimeStr) : null;
-
-    // Parse date - could be 'date', 'reportDate', or derive from startTime
+    // Parse date from attendance.date, or fallback to createdAt
     DateTime date;
-    if (json['date'] != null) {
-      date = DateTime.parse(json['date'] as String);
-    } else if (json['reportDate'] != null) {
-      date = DateTime.parse(json['reportDate'] as String);
+    if (attendance != null && attendance['date'] != null) {
+      date = DateTime.parse(attendance['date'] as String);
+    } else if (json['createdAt'] != null) {
+      final createdAt = DateTime.parse(json['createdAt'] as String);
+      date = DateTime(createdAt.year, createdAt.month, createdAt.day);
     } else {
-      date = DateTime(startedAt.year, startedAt.month, startedAt.day);
-    }
-
-    // Parse duration - GraphQL may return seconds as num
-    int duration = 0;
-    if (json['duration'] != null && json['duration'] is num) {
-      duration = (json['duration'] as num).toInt();
-    }
-
-    // Parse taskSubmissionStatus from GraphQL or taskSubmitted from old API
-    bool taskSubmitted = json['taskSubmitted'] as bool? ?? false;
-    if (json['taskSubmissionStatus'] != null) {
-      taskSubmitted = json['taskSubmissionStatus'] == 'SUBMITTED';
+      date = DateTime.now();
     }
 
     return PendingTimeEntry(
-      id: json['_id'] as String? ?? json['id'] as String? ?? '',
-      entryIds: entryIds,
+      id: id,
+      dailyProjectWorkId: id, // The ID is the DailyProjectWork ID itself
       projectId: project?['_id'] as String? ??
           project?['id'] as String? ??
           json['projectId'] as String? ?? '',
@@ -175,12 +151,8 @@ class PendingTimeEntry {
       projectImage: project?['projectImage'] as String? ??
           Project.extractUrl(project?['imageUrl']) ??
           json['projectImage'] as String?,
-      startedAt: startedAt,
-      endedAt: endedAt,
+      startedAt: date,
       date: date,
-      duration: duration,
-      taskSubmitted: taskSubmitted,
-      openStatus: json['openStatus'] as String? ?? json['status'] as String? ?? 'closed',
     );
   }
 

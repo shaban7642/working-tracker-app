@@ -1,34 +1,12 @@
 class TimeEntryQueries {
   static const String getMyPendingEntries = r'''
-    query Attendance_TimeEntry_GetMyPendingEntries($pagination: PaginationInput) {
-      Attendance_TimeEntry_GetMyPendingEntries(pagination: $pagination) {
+    query Attendance_DailyProjectWork_GetMyPendingEntries($pagination: PaginationInput) {
+      Attendance_DailyProjectWork_GetMyPendingEntries(pagination: $pagination) {
         entries {
           id
-          description
-          startTime
-          endTime
-          duration
-          status
-          taskSubmissionStatus
+          attendanceId
           projectId
-          project {
-            id
-            name
-            description
-          }
           employeeId
-          sessionId
-          tasks {
-            id
-            title
-            description
-            images {
-              id
-              imageUrl { url cacheKey }
-            }
-            createdAt
-            updatedAt
-          }
           createdAt
           updatedAt
         }
@@ -41,6 +19,7 @@ class TimeEntryQueries {
     mutation Attendance_TimeEntry_Update($input: UpdateTimeEntryInput!, $timeEntryId: String!) {
       Attendance_TimeEntry_Update(input: $input, timeEntryId: $timeEntryId) {
         createdAt
+        dailyProjectWorkId
         description
         duration
         employee {
@@ -53,7 +32,7 @@ class TimeEntryQueries {
         endTime
         id
         status
-        taskSubmissionStatus
+
         project {
           description
           id
@@ -79,13 +58,14 @@ class TimeEntryQueries {
     mutation Attendance_TimeEntry_Pause($timeEntryId: String!) {
       Attendance_TimeEntry_Pause(timeEntryId: $timeEntryId) {
         createdAt
+        dailyProjectWorkId
         description
         duration
         employeeId
         endTime
         id
         status
-        taskSubmissionStatus
+
         project {
           description
           id
@@ -103,13 +83,14 @@ class TimeEntryQueries {
     mutation Attendance_TimeEntry_Resume($timeEntryId: String!) {
       Attendance_TimeEntry_Resume(timeEntryId: $timeEntryId) {
         createdAt
+        dailyProjectWorkId
         description
         duration
         employeeId
         endTime
         id
         status
-        taskSubmissionStatus
+
         project {
           description
           id
@@ -127,13 +108,14 @@ class TimeEntryQueries {
     mutation Attendance_TimeEntry_SetProject($input: SetProjectTimeEntryInput!) {
       Attendance_TimeEntry_SetProject(input: $input) {
         createdAt
+        dailyProjectWorkId
         description
         duration
         employeeId
         endTime
         id
         status
-        taskSubmissionStatus
+
         project {
           id
           name
@@ -150,6 +132,23 @@ class TimeEntryQueries {
   static const String deleteTimeEntry = r'''
     mutation Attendance_TimeEntry_Delete($timeEntryId: String!) {
       Attendance_TimeEntry_Delete(timeEntryId: $timeEntryId)
+    }
+  ''';
+
+  static const String createWithTasks = r'''
+    mutation Attendance_TimeEntry_CreateWithTasks($input: CreateTimeEntryWithTasksInput!) {
+      Attendance_TimeEntry_CreateWithTasks(input: $input) {
+        id
+        dailyProjectWorkId
+        projectId
+        startTime
+        endTime
+        status
+        project {
+          id
+          name
+        }
+      }
     }
   ''';
 }

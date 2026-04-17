@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -E \"\\\\.dart$\")"
+      "Bash(grep -E \"\\\\.dart$\")",
+      "mcp__chrome-devtools__take_screenshot"
+    ],
+    "additionalDirectories": [
+      "/Users/ahmedshaban/Developer/sscommunity-nest-backend/src/modules/attendance/dto/inputs"
     ]
   }
 }

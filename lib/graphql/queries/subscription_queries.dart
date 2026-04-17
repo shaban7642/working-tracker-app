@@ -45,7 +45,7 @@ class SubscriptionQueries {
       Attendance_Task_Changed {
         employeeId
         taskId
-        timeEntryId
+        dailyProjectWorkId
         title
         action
         projectId

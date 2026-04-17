@@ -530,10 +530,71 @@ class GraphqlApiService {
     }
   }
 
-  /// Get pending time entries
+  /// Create a time entry with tasks for a specific project and date.
+  /// Used when adding tasks to days that have no existing time entries.
+  Future<Map<String, dynamic>?> createTimeEntryWithTasks({
+    required String projectId,
+    required DateTime date,
+    required List<Map<String, String>> tasks,
+  }) async {
+    try {
+      final startTime = DateTime(date.year, date.month, date.day, 9, 0).toUtc().toIso8601String();
+      final endTime = DateTime(date.year, date.month, date.day, 17, 0).toUtc().toIso8601String();
+
+      _logger.info('Creating time entry with ${tasks.length} tasks for project $projectId on ${date.toIso8601String()}');
+
+      final data = await _mutateWithRetry(
+        TimeEntryQueries.createWithTasks,
+        variables: {
+          'input': {
+            'projectId': projectId,
+            'startTime': startTime,
+            'endTime': endTime,
+            'tasks': tasks,
+          },
+        },
+      );
+
+      if (data == null) return null;
+      return data['Attendance_TimeEntry_CreateWithTasks'] as Map<String, dynamic>?;
+    } catch (e, stackTrace) {
+      _logger.error('Failed to create time entry with tasks', e, stackTrace);
+      if (e is TokenExpiredException) rethrow;
+      return null;
+    }
+  }
+
+  // Caches for attendance date and project name lookups (pending entries enrichment)
+  final Map<String, String> _attendanceDateCache = {};
+
+  /// Get attendance date by attendance ID
+  Future<String?> _fetchAttendanceDate(String attendanceId, String employeeId) async {
+    if (_attendanceDateCache.containsKey(attendanceId)) {
+      return _attendanceDateCache[attendanceId];
+    }
+    try {
+      final data = await _queryWithRetry(
+        AttendanceQueries.getAttendanceById,
+        variables: {'id': attendanceId, 'employeeId': employeeId},
+      );
+      if (data != null) {
+        final attendance = data['Attendance_Attendance_GetById'] as Map<String, dynamic>?;
+        if (attendance != null && attendance['date'] != null) {
+          final dateStr = attendance['date'].toString();
+          _attendanceDateCache[attendanceId] = dateStr;
+          return dateStr;
+        }
+      }
+    } catch (_) {
+      // Swallow — entry will fall back to yesterday
+    }
+    return null;
+  }
+
+  /// Get pending DailyProjectWork entries (enriched with dates, project names, durations)
   Future<List<Map<String, dynamic>>> getPendingTimeEntries() async {
     try {
-      _logger.info('Fetching pending time entries...');
+      _logger.info('Fetching pending DailyProjectWork entries...');
 
       final data = await _queryWithRetry(
         TimeEntryQueries.getMyPendingEntries,
@@ -544,12 +605,90 @@ class GraphqlApiService {
 
       if (data == null) return [];
 
-      final pendingData = data['Attendance_TimeEntry_GetMyPendingEntries'];
+      final pendingData = data['Attendance_DailyProjectWork_GetMyPendingEntries'];
       if (pendingData == null) return [];
 
-      final entries = pendingData['entries'] as List<dynamic>? ?? [];
-      _logger.info('Fetched ${entries.length} pending time entries');
-      return entries.cast<Map<String, dynamic>>();
+      final rawEntries = (pendingData['entries'] as List<dynamic>? ?? [])
+          .cast<Map<String, dynamic>>();
+      _logger.info('Fetched ${rawEntries.length} pending DPW entries');
+
+      if (rawEntries.isEmpty) return [];
+
+      // Step 1: Resolve attendance dates and collect unique attendance/project IDs
+      final missingAttendanceIds = <String>{};
+      for (final e in rawEntries) {
+        final attendanceId = e['attendanceId'] as String?;
+        if (attendanceId != null && !_attendanceDateCache.containsKey(attendanceId)) {
+          missingAttendanceIds.add(attendanceId);
+        }
+      }
+
+      // Fetch attendance dates in parallel
+      final employeeId = rawEntries.first['employeeId'] as String? ?? '';
+      await Future.wait(
+        missingAttendanceIds.map((id) => _fetchAttendanceDate(id, employeeId)),
+      );
+
+      // Step 2: Group DPW IDs by date and fetch daily report for durations
+      final Map<String, Set<String>> dpwIdsByDate = {};
+      for (final e in rawEntries) {
+        final attendanceId = e['attendanceId'] as String?;
+        final iso = attendanceId != null ? _attendanceDateCache[attendanceId] : null;
+        if (iso == null) continue;
+        final dateOnly = iso.split('T').first;
+        dpwIdsByDate.putIfAbsent(dateOnly, () => <String>{}).add(e['id'] as String);
+      }
+
+      final Map<String, double> hoursByDpwId = {};
+      await Future.wait(dpwIdsByDate.keys.map((dateOnly) async {
+        try {
+          final report = await getDailyReportByDate(DateTime.parse(dateOnly));
+          if (report != null) {
+            final items = report['items'] as List<dynamic>? ?? [];
+            for (final item in items) {
+              final itemMap = item as Map<String, dynamic>;
+              final dpwId = itemMap['dailyProjectWorkId'] as String?;
+              final hours = itemMap['hoursWorked'];
+              if (dpwId != null && hours != null) {
+                hoursByDpwId[dpwId] = (hoursByDpwId[dpwId] ?? 0) + (hours as num).toDouble();
+              }
+            }
+          }
+        } catch (_) {}
+      }));
+
+      // Step 3: Build enriched entries (matching mobile app format)
+      final fallbackIso = DateTime.now()
+          .subtract(const Duration(days: 1))
+          .toUtc()
+          .toIso8601String();
+
+      final enriched = rawEntries.map((entry) {
+        final attendanceId = entry['attendanceId'] as String?;
+        final startedAtIso = attendanceId != null
+            ? (_attendanceDateCache[attendanceId] ?? fallbackIso)
+            : fallbackIso;
+        final pid = entry['projectId'] as String?;
+        final hours = hoursByDpwId[entry['id'] as String] ?? 0;
+        final durationSeconds = (hours * 3600).round();
+
+        return <String, dynamic>{
+          '_id': entry['id'],
+          'dailyProjectWorkId': entry['id'],
+          'attendanceId': attendanceId,
+          'employeeId': entry['employeeId'],
+          'startedAt': startedAtIso,
+          'endedAt': startedAtIso,
+          'duration': durationSeconds,
+          'project': {
+            '_id': pid ?? '',
+            'name': '', // Will be resolved by provider from project cache
+          },
+          'tasks': const <Map<String, dynamic>>[],
+        };
+      }).toList();
+
+      return enriched;
     } catch (e, stackTrace) {
       _logger.error('Failed to fetch pending time entries', e, stackTrace);
       if (e is TokenExpiredException) rethrow;
@@ -557,54 +696,37 @@ class GraphqlApiService {
     }
   }
 
-  /// Mark time entry as task submitted (update taskSubmissionStatus)
+  /// Task submission is now computed from tasks — no longer needs explicit marking.
+  /// Kept as no-op for backward compatibility with callers.
   Future<bool> markTimeEntryTaskSubmitted(String timeEntryId) async {
-    try {
-      final data = await _mutateWithRetry(
-        TimeEntryQueries.updateTimeEntry,
-        variables: {
-          'input': {'taskSubmissionStatus': 'SUBMITTED'},
-          'timeEntryId': timeEntryId,
-        },
-      );
-      return data != null;
-    } catch (e, stackTrace) {
-      _logger.error('Failed to mark time entry submitted', e, stackTrace);
-      if (e is TokenExpiredException) rethrow;
-      return false;
-    }
+    return true;
   }
 
-  /// Mark multiple time entries as submitted
+  /// Task submission is now computed from tasks — no longer needs explicit marking.
   Future<bool> markMultipleTimeEntriesSubmitted(List<String> entryIds) async {
-    try {
-      for (final id in entryIds) {
-        await markTimeEntryTaskSubmitted(id);
-      }
-      return true;
-    } catch (e, stackTrace) {
-      _logger.error('Failed to mark multiple entries submitted', e, stackTrace);
-      if (e is TokenExpiredException) rethrow;
-      return false;
-    }
+    return true;
   }
 
   // ============================================================================
   // TASKS
   // ============================================================================
 
-  /// Create a task for a time entry
+  /// Create a task for a daily project work
   Future<Map<String, dynamic>?> createTask({
-    required String timeEntryId,
+    String? dailyProjectWorkId,
+    String? projectId,
     required String title,
     String? description,
     List<Map<String, dynamic>>? images,
   }) async {
     try {
-      _logger.info('Creating task for time entry: $timeEntryId');
+      _logger.info('Creating task for dailyProjectWork: $dailyProjectWorkId, projectId: $projectId');
 
       final input = <String, dynamic>{
-        'timeEntryId': timeEntryId,
+        if (dailyProjectWorkId != null && dailyProjectWorkId.isNotEmpty)
+          'dailyProjectWorkId': dailyProjectWorkId,
+        if (projectId != null && projectId.isNotEmpty)
+          'projectId': projectId,
         'title': title,
         if (description != null) 'description': description,
         if (images != null && images.isNotEmpty) 'images': images,
@@ -710,19 +832,19 @@ class GraphqlApiService {
     }
   }
 
-  /// Get tasks by time entry
-  Future<List<Map<String, dynamic>>> getTasksByTimeEntry(String timeEntryId) async {
+  /// Get tasks by daily project work
+  Future<List<Map<String, dynamic>>> getTasksByDailyProjectWork(String dailyProjectWorkId) async {
     try {
       final data = await _queryWithRetry(
-        TaskQueries.getByTimeEntry,
-        variables: {'timeEntryId': timeEntryId},
+        TaskQueries.getByDailyProjectWork,
+        variables: {'dailyProjectWorkId': dailyProjectWorkId},
       );
 
       if (data == null) return [];
-      final tasks = data['Attendance_Task_GetByTimeEntry'] as List<dynamic>? ?? [];
+      final tasks = data['Attendance_Task_GetByDailyProjectWork'] as List<dynamic>? ?? [];
       return tasks.cast<Map<String, dynamic>>();
     } catch (e, stackTrace) {
-      _logger.error('Failed to get tasks by time entry', e, stackTrace);
+      _logger.error('Failed to get tasks by daily project work', e, stackTrace);
       if (e is TokenExpiredException) rethrow;
       return [];
     }

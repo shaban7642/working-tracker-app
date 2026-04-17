@@ -28,6 +28,9 @@ class TimeEntry extends HiveObject {
   @HiveField(7)
   final bool isRunning;
 
+  @HiveField(8)
+  final String? dailyProjectWorkId;
+
   TimeEntry({
     required this.id,
     required this.projectId,
@@ -37,6 +40,7 @@ class TimeEntry extends HiveObject {
     this.duration = Duration.zero,
     this.description,
     this.isRunning = false,
+    this.dailyProjectWorkId,
   });
 
   // Copy with method for immutability
@@ -49,6 +53,7 @@ class TimeEntry extends HiveObject {
     Duration? duration,
     String? description,
     bool? isRunning,
+    String? dailyProjectWorkId,
   }) {
     return TimeEntry(
       id: id ?? this.id,
@@ -59,6 +64,7 @@ class TimeEntry extends HiveObject {
       duration: duration ?? this.duration,
       description: description ?? this.description,
       isRunning: isRunning ?? this.isRunning,
+      dailyProjectWorkId: dailyProjectWorkId ?? this.dailyProjectWorkId,
     );
   }
 
@@ -81,6 +87,7 @@ class TimeEntry extends HiveObject {
       'duration': duration.inSeconds,
       'description': description,
       'isRunning': isRunning,
+      'dailyProjectWorkId': dailyProjectWorkId,
     };
   }
 
@@ -97,6 +104,7 @@ class TimeEntry extends HiveObject {
       duration: Duration(seconds: json['duration'] as int? ?? 0),
       description: json['description'] as String?,
       isRunning: json['isRunning'] as bool? ?? false,
+      dailyProjectWorkId: json['dailyProjectWorkId'] as String?,
     );
   }
 

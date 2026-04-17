@@ -8,7 +8,7 @@ import 'otp_verification_screen.dart';
 
 /// Email domain for autocomplete suggestion
 const List<String> _emailDomains = [
-  '@ssarchitects.com',
+  '@silverstonearchitects.com',
 ];
 
 class EmailEntryScreen extends ConsumerStatefulWidget {
@@ -358,7 +358,16 @@ class _EmailEntryScreenState extends ConsumerState<EmailEntryScreen> {
             ),
           ),
           validator: _validateEmail,
-          onFieldSubmitted: (_) => _handleSignIn(),
+          onFieldSubmitted: (_) {
+            if (_showEmailSuggestions) {
+              final domains = _getFilteredDomains();
+              if (domains.isNotEmpty) {
+                _selectEmailDomain(domains.first);
+                return;
+              }
+            }
+            _handleSignIn();
+          },
         ),
         // Email domain suggestions
         if (_showEmailSuggestions) ...[

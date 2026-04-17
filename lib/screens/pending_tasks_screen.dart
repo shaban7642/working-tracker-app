@@ -410,7 +410,7 @@ class _PendingTasksScreenState extends ConsumerState<PendingTasksScreen> {
       context: context,
       projectId: entry.projectId,
       projectName: entry.projectName,
-      entryIds: entry.allEntryIds, // Pass all entry IDs for merged entries
+      entryIds: entry.dailyProjectWorkId != null ? [entry.dailyProjectWorkId!] : null,
       reportDate: entry.date,
       onTaskCreated: (taskData) {
         // Convert the task data to ReportTask and call _onTaskAdded

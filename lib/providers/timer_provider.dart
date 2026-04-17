@@ -18,6 +18,7 @@ class ActiveSession {
   final String projectName;
   final DateTime startedAt; // Always stored in local time
   final bool isRunning;
+  final String? dailyProjectWorkId;
 
   ActiveSession({
     required this.id,
@@ -25,6 +26,7 @@ class ActiveSession {
     required this.projectName,
     required this.startedAt,
     this.isRunning = true,
+    this.dailyProjectWorkId,
   });
 
   /// Calculate elapsed duration from server's startedAt time
@@ -42,6 +44,7 @@ class ActiveSession {
     String? projectName,
     DateTime? startedAt,
     bool? isRunning,
+    String? dailyProjectWorkId,
   }) {
     return ActiveSession(
       id: id ?? this.id,
@@ -49,12 +52,13 @@ class ActiveSession {
       projectName: projectName ?? this.projectName,
       startedAt: startedAt ?? this.startedAt,
       isRunning: isRunning ?? this.isRunning,
+      dailyProjectWorkId: dailyProjectWorkId ?? this.dailyProjectWorkId,
     );
   }
 
   @override
   String toString() {
-    return 'ActiveSession(id: $id, projectId: $projectId, projectName: $projectName, startedAt: $startedAt, isRunning: $isRunning, elapsed: ${elapsedDuration.inSeconds}s)';
+    return 'ActiveSession(id: $id, projectId: $projectId, projectName: $projectName, startedAt: $startedAt, isRunning: $isRunning, elapsed: ${elapsedDuration.inSeconds}s, dpwId: $dailyProjectWorkId)';
   }
 }
 
@@ -82,6 +86,11 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
   CurrentTimerNotifier(this._ref) : super(null) {
     _logger = _ref.read(loggerServiceProvider);
     _logger.info('Timer provider initialized (server-based)');
+  }
+
+  /// Update the current session state (e.g. to patch in a missing field)
+  void updateSession(ActiveSession session) {
+    state = session;
   }
 
   /// Start UI refresh timer to update elapsed time display every second
@@ -313,6 +322,9 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
           final entryStatus = openEntry['status']?.toString().toUpperCase() ?? 'ACTIVE';
           final isActive = entryStatus == 'ACTIVE';
 
+          // Extract dailyProjectWorkId from API response
+          final dpwId = openEntry['dailyProjectWorkId']?.toString();
+
           // Set the active session from server data
           final newSession = ActiveSession(
             id: entryId,
@@ -320,6 +332,7 @@ class CurrentTimerNotifier extends StateNotifier<ActiveSession?> {
             projectName: projectName,
             startedAt: startedAt,
             isRunning: isActive,
+            dailyProjectWorkId: dpwId,
           );
 
           _logger.info('Created ActiveSession: $newSession');

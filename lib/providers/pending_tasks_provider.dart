@@ -3,6 +3,7 @@ import '../models/pending_time_entry.dart';
 import '../services/graphql_api_service.dart';
 import '../services/logger_service.dart';
 import 'auth_provider.dart';
+import 'project_provider.dart';
 
 // ============================================================================
 // PENDING TASKS STATE
@@ -94,27 +95,46 @@ class PendingTasksNotifier extends StateNotifier<PendingTasksState> {
     _logger.info('PendingTasksNotifier initialized');
   }
 
-  /// Load pending time entries from API
+  /// Load pending DailyProjectWork entries from API
   Future<void> loadPendingEntries() async {
-    _logger.info('Loading pending time entries...');
+    _logger.info('Loading pending DailyProjectWork entries...');
     state = const PendingTasksLoading();
 
     try {
       final rawEntries = await _api.getPendingTimeEntries();
-      // Backend filters: ENDED entries with no tasks, excluding current session.
-      // Client filters: exclude today's entries (backend only excludes current session,
-      // not all of today's — e.g. a closed session from earlier today still comes through).
+      // Resolve project names from local cache
+      final projects = _ref.read(projectsProvider).valueOrNull ?? [];
+      final projectMap = {for (final p in projects) p.id: p};
+
       final today = DateTime.now();
       final todayStart = DateTime(today.year, today.month, today.day);
-      final allEntries = rawEntries
-          .map((e) => PendingTimeEntry.fromJson(e))
+
+      // Each DPW entry is already 1:1 per project+day — no merging needed
+      final entries = rawEntries
+          .map((e) {
+            final entry = PendingTimeEntry.fromJson(e);
+            final project = projectMap[entry.projectId];
+            if (project != null) {
+              return entry.copyWith(
+                projectName: project.name,
+                projectImage: project.projectImage,
+              );
+            }
+            // Fall back to 'General Work' for entries without project
+            if (entry.projectName.isEmpty || entry.projectName == 'Unknown Project') {
+              return entry.copyWith(
+                projectName: entry.projectId.isEmpty ? 'General Work' : 'Unknown Project',
+              );
+            }
+            return entry;
+          })
           .where((entry) => entry.date.isBefore(todayStart))
           .toList();
 
-      // Merge entries by project+date (same as mobile app)
-      final entries = _mergeByProjectAndDate(allEntries);
+      // Sort by date (oldest first)
+      entries.sort((a, b) => a.date.compareTo(b.date));
 
-      _logger.info('Loaded ${rawEntries.length} raw entries, ${allEntries.length} before today, merged into ${entries.length}');
+      _logger.info('Loaded ${rawEntries.length} DPW entries, ${entries.length} before today');
 
       if (entries.isEmpty) {
         state = const PendingTasksCompleted();
@@ -187,29 +207,6 @@ class PendingTasksNotifier extends StateNotifier<PendingTasksState> {
     state = const PendingTasksCompleted();
   }
 
-  /// Merge entries by project+date (same grouping as mobile app)
-  List<PendingTimeEntry> _mergeByProjectAndDate(List<PendingTimeEntry> entries) {
-    final Map<String, List<PendingTimeEntry>> grouped = {};
-
-    for (final entry in entries) {
-      final d = entry.date;
-      final key = '${entry.projectId}_${d.year}-${d.month}-${d.day}';
-      grouped.putIfAbsent(key, () => []).add(entry);
-    }
-
-    return grouped.values.map((group) {
-      if (group.length == 1) return group.first;
-
-      final first = group.first;
-      final totalDuration = group.fold<int>(0, (sum, e) => sum + e.duration);
-      final allIds = group.map((e) => e.id).toList();
-
-      return first.copyWith(
-        entryIds: allIds,
-        duration: totalDuration,
-      );
-    }).toList();
-  }
 }
 
 // ============================================================================

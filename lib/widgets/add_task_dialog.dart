@@ -839,19 +839,54 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
         return;
       }
 
-      // Determine the correct timeEntryId
+      // Determine the correct dailyProjectWorkId
       final api = GraphqlApiService();
-      String? timeEntryId;
+      String? dailyProjectWorkId;
       if (widget.entryIds != null && widget.entryIds!.isNotEmpty) {
-        // Pending tasks: use the first time entry ID
-        timeEntryId = widget.entryIds!.first;
+        // Pending tasks: use the dailyProjectWorkId passed via entryIds
+        dailyProjectWorkId = widget.entryIds!.first;
       } else {
-        // Current session: get active time entry ID from timer state
-        timeEntryId = ref.read(currentTimerProvider)?.id;
+        // Current session: get dailyProjectWorkId from timer state
+        dailyProjectWorkId = ref.read(currentTimerProvider)?.dailyProjectWorkId;
+
+        // Fallback 1: if dailyProjectWorkId is missing, try open entry
+        if (dailyProjectWorkId == null || dailyProjectWorkId.isEmpty) {
+          _logger.info('dailyProjectWorkId missing from timer state, fetching from API...');
+          final openEntry = await api.getOpenEntry();
+          if (openEntry != null) {
+            dailyProjectWorkId = openEntry['dailyProjectWorkId']?.toString();
+            // Update the timer state so subsequent calls don't need to re-fetch
+            if (dailyProjectWorkId != null && dailyProjectWorkId.isNotEmpty) {
+              final currentSession = ref.read(currentTimerProvider);
+              if (currentSession != null) {
+                ref.read(currentTimerProvider.notifier).updateSession(
+                  currentSession.copyWith(dailyProjectWorkId: dailyProjectWorkId),
+                );
+              }
+            }
+          }
+        }
+
+        // Fallback 2: fetch from today's daily report for this specific project
+        if (dailyProjectWorkId == null || dailyProjectWorkId.isEmpty) {
+          _logger.info('No open entry, fetching dailyProjectWorkId from daily report for project: ${widget.projectId}');
+          final report = await api.getDailyReportByDate(DateTime.now());
+          if (report != null) {
+            final items = report['items'] as List<dynamic>? ?? [];
+            for (final item in items) {
+              final itemMap = item as Map<String, dynamic>;
+              if (itemMap['projectId'] == widget.projectId) {
+                dailyProjectWorkId = itemMap['dailyProjectWorkId']?.toString();
+                break;
+              }
+            }
+          }
+        }
       }
 
-      if (timeEntryId == null || timeEntryId.isEmpty) {
-        throw Exception('No active time entry found');
+      // If no dailyProjectWorkId found, the backend will auto-create one using projectId
+      if (dailyProjectWorkId == null || dailyProjectWorkId.isEmpty) {
+        _logger.info('No dailyProjectWorkId found, will pass projectId to backend for auto-resolution');
       }
 
       // Upload attachments first (matching mobile flow)
@@ -876,7 +911,10 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
 
       // Create task with images inline
       final result = await api.createTask(
-        timeEntryId: timeEntryId,
+        dailyProjectWorkId: (dailyProjectWorkId != null && dailyProjectWorkId.isNotEmpty)
+            ? dailyProjectWorkId
+            : null,
+        projectId: widget.projectId,
         title: taskName,
         description: description,
         images: uploadedImages,
@@ -886,23 +924,7 @@ class _AddTaskSheetState extends ConsumerState<AddTaskSheet> {
         throw Exception('Failed to create task');
       }
 
-      _logger.info('Task created for time entry: $timeEntryId (project: ${widget.projectId})');
-
-      // Duplicate task for remaining entries in merged group (matching mobile behavior)
-      if (widget.entryIds != null && widget.entryIds!.length > 1) {
-        for (int i = 1; i < widget.entryIds!.length; i++) {
-          try {
-            await api.createTask(
-              timeEntryId: widget.entryIds![i],
-              title: taskName,
-              description: description,
-            );
-          } catch (e) {
-            _logger.warning('Failed to duplicate task for entry ${widget.entryIds![i]}: $e');
-          }
-        }
-        _logger.info('Duplicated task for ${widget.entryIds!.length - 1} remaining entries');
-      }
+      _logger.info('Task created for dailyProjectWork: $dailyProjectWorkId (project: ${widget.projectId})');
 
       // Call the callback with the created task data
       if (widget.onTaskCreated != null) {

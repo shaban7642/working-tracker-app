@@ -37,11 +37,12 @@ class AttendanceQueries {
           isAutoCheckout
           timeEntries {
             id
+            dailyProjectWorkId
             startTime
             endTime
             duration
             status
-            taskSubmissionStatus
+
             projectId
             project {
               id
@@ -53,11 +54,12 @@ class AttendanceQueries {
         }
         activeTimeEntry {
           id
+          dailyProjectWorkId
           startTime
           endTime
           duration
           status
-          taskSubmissionStatus
+
           projectId
           project {
             id
@@ -96,11 +98,12 @@ class AttendanceQueries {
             isAutoCheckout
             timeEntries {
               id
+              dailyProjectWorkId
               startTime
               endTime
               duration
               status
-              taskSubmissionStatus
+  
               projectId
               project {
                 id
@@ -166,7 +169,7 @@ class AttendanceQueries {
           projectId
           projectName
           startTime
-          timeEntryId
+          dailyProjectWorkId
           tasks {
             id
             title
@@ -185,7 +188,7 @@ class AttendanceQueries {
         employeeId
         totalHours
         items {
-          timeEntryId
+          dailyProjectWorkId
           projectId
           projectName
           startTime
@@ -245,6 +248,17 @@ class AttendanceQueries {
           totalUsers
           reportPeriod
         }
+      }
+    }
+  ''';
+
+  /// Get attendance record by ID (for resolving dates of DailyProjectWork entries)
+  static const String getAttendanceById = r'''
+    query Attendance_Attendance_GetById($id: String!, $employeeId: String!) {
+      Attendance_Attendance_GetById(id: $id, employeeId: $employeeId) {
+        id
+        date
+        employeeId
       }
     }
   ''';
